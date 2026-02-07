@@ -1,0 +1,5 @@
+{
+    "url": "https://github.com/PyAV-Org/pyav-ffmpeg/releases/download/8.0.1-5/ffmpeg-{platform}.tar.gz",
+    "version": "8.0.1",
+    "note": "Using PyAV's pre-built FFmpeg binaries. See https://github.com/PyAV-Org/pyav-ffmpeg"
+}
