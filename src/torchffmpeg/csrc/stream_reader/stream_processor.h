@@ -3,7 +3,7 @@
 #include "torchffmpeg/csrc/ffmpeg.h"
 #include "torchffmpeg/csrc/stream_reader/post_process.h"
 #include "torchffmpeg/csrc/stream_reader/typedefs.h"
-#include <torch/types.h>
+#include "torchffmpeg/csrc/dlpack.h"
 #include <map>
 
 namespace torchffmpeg {
@@ -40,7 +40,7 @@ class StreamProcessor {
       int num_chunks,
       AVRational frame_rate,
       const std::string& filter_description,
-      const torch::Device& device);
+      const DLDevice& device);
 
   void remove_stream(KeyType key);
 
@@ -50,7 +50,7 @@ class StreamProcessor {
       const AVCodecParameters* codecpar,
       const std::optional<std::string>& decoder_name,
       const std::optional<OptionDict>& decoder_option,
-      const torch::Device& device);
+      const DLDevice& device);
 
   //////////////////////////////////////////////////////////////////////////////
   // Query methods

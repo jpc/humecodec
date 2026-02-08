@@ -1,10 +1,19 @@
 // One stop header for all FFmpeg needs
 #pragma once
-#include <torch/types.h>
+#include "torchffmpeg/csrc/error_utils.h"
+#include <cassert>
 #include <cstdint>
+#include <cstring>
+#include <deque>
+#include <functional>
 #include <map>
 #include <memory>
+#include <optional>
+#include <set>
+#include <sstream>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 extern "C" {
 #include <libavcodec/avcodec.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "torchffmpeg/csrc/ffmpeg.h"
-#include <torch/types.h>
+#include "torchffmpeg/csrc/managed_buffer.h"
 
 namespace torchffmpeg {
 
@@ -9,11 +9,11 @@ class TensorConverter {
  public:
   // Initialization is one-time process applied to frames before the iteration
   // starts. i.e. either convert to NHWC.
-  using InitFunc = std::function<torch::Tensor(const torch::Tensor&, AVFrame*)>;
-  // Convert function writes input frame Tensor to destination AVFrame
-  // both tensor input and AVFrame are expected to be valid and properly
+  using InitFunc = std::function<ManagedBuffer(const ManagedBuffer&, AVFrame*)>;
+  // Convert function writes input frame ManagedBuffer to destination AVFrame
+  // both buffer input and AVFrame are expected to be valid and properly
   // allocated. (i.e. glorified copy). It is used in Iterator.
-  using ConvertFunc = std::function<void(const torch::Tensor&, AVFrame*)>;
+  using ConvertFunc = std::function<void(const ManagedBuffer&, AVFrame*)>;
 
   //////////////////////////////////////////////////////////////////////////////
   // Generator
@@ -24,7 +24,7 @@ class TensorConverter {
     // Iterator
     ////////////////////////////////////////////////////////////////////////////
     class Iterator {
-      const torch::Tensor frames;
+      const ManagedBuffer& frames;
       AVFrame* buffer;
       ConvertFunc& convert_func;
 
@@ -33,7 +33,7 @@ class TensorConverter {
 
      public:
       Iterator(
-          const torch::Tensor tensor,
+          const ManagedBuffer& buf,
           AVFrame* buffer,
           ConvertFunc& convert_func,
           int64_t step);
@@ -44,14 +44,14 @@ class TensorConverter {
     };
 
    private:
-    torch::Tensor frames;
+    ManagedBuffer frames;
     AVFrame* buffer;
     ConvertFunc& convert_func;
     int64_t step;
 
    public:
     Generator(
-        torch::Tensor frames,
+        ManagedBuffer frames,
         AVFrame* buffer,
         ConvertFunc& convert_func,
         int64_t step = 1);
@@ -69,7 +69,7 @@ class TensorConverter {
 
  public:
   TensorConverter(AVMediaType type, AVFrame* buffer, int buffer_size = 1);
-  Generator convert(const torch::Tensor& t);
+  Generator convert(const ManagedBuffer& t);
 };
 
 } // namespace torchffmpeg

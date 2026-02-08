@@ -8,7 +8,7 @@ AVStream* add_stream(
   AVStream* stream = avformat_new_stream(format_ctx, nullptr);
   int ret =
       avcodec_parameters_copy(stream->codecpar, stream_params.codec_params);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to copy the stream's codec parameters. (",
       av_err2string(ret),
@@ -27,10 +27,10 @@ PacketWriter::PacketWriter(
 void PacketWriter::write_packet(const AVPacketPtr& packet) {
   AVPacket dst_packet;
   int ret = av_packet_ref(&dst_packet, packet);
-  TORCH_CHECK(ret >= 0, "Failed to copy packet.");
+  TFMPEG_CHECK(ret >= 0, "Failed to copy packet.");
   av_packet_rescale_ts(&dst_packet, original_time_base, stream->time_base);
   dst_packet.stream_index = stream->index;
   ret = av_interleaved_write_frame(format_ctx, &dst_packet);
-  TORCH_CHECK(ret >= 0, "Failed to write packet to destination.");
+  TFMPEG_CHECK(ret >= 0, "Failed to write packet to destination.");
 }
 } // namespace torchffmpeg

@@ -2,32 +2,32 @@
 #include "torchffmpeg/csrc/stream_reader/stream_reader.h"
 #include "torchffmpeg/csrc/stream_writer/stream_writer.h"
 #include "torchffmpeg/csrc/dlpack.h"
-#include <torch/extension.h>
+#include "torchffmpeg/csrc/managed_buffer.h"
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <cassert>
+#include <cstring>
 
 extern "C" {
 #include <libavformat/version.h>
 }
 
-// Include ATen DLPack utilities
-#include <ATen/DLConvertor.h>
+namespace py = pybind11;
 
-// DLPack conversion utilities
+namespace torchffmpeg {
 namespace {
 
-// Convert torch::Tensor to DLPack PyCapsule
-py::capsule tensor_to_dlpack(const torch::Tensor& tensor) {
-  // Use PyTorch's built-in DLPack export
-  DLManagedTensor* managed = at::toDLPack(tensor);
+// DLPack capsule utilities
+
+// Export a ManagedBuffer as a DLPack PyCapsule.
+// This transfers ownership of the underlying data to the capsule.
+py::capsule managed_buffer_to_capsule(ManagedBuffer& buf) {
+  DLManagedTensor* managed = buf.to_dlpack();
   return py::capsule(managed, "dltensor", [](PyObject* obj) {
-    // Check the capsule name - it may be "dltensor" or "used_dltensor"
-    // If it's "used_dltensor", the capsule was consumed by torch.from_dlpack
-    // and the tensor now owns the memory, so we shouldn't call the deleter
     const char* name = PyCapsule_GetName(obj);
     if (name && std::strcmp(name, "used_dltensor") == 0) {
-      // Capsule was consumed, memory is managed by the recipient
       return;
     }
-    // Capsule was not consumed, we need to clean up
     auto* ptr = static_cast<DLManagedTensor*>(
         PyCapsule_GetPointer(obj, "dltensor"));
     if (ptr && ptr->deleter) {
@@ -36,9 +36,9 @@ py::capsule tensor_to_dlpack(const torch::Tensor& tensor) {
   });
 }
 
-// Convert DLPack PyCapsule to torch::Tensor
-torch::Tensor dlpack_to_tensor(py::capsule capsule) {
-  // Verify capsule name
+// Create a ManagedBuffer from a DLPack PyCapsule.
+// Follows the DLPack protocol (renames capsule to "used_dltensor").
+ManagedBuffer capsule_to_managed_buffer(py::capsule capsule) {
   const char* name = PyCapsule_GetName(capsule.ptr());
   if (name && std::strcmp(name, "dltensor") != 0) {
     throw std::runtime_error("Expected capsule with name 'dltensor'");
@@ -50,17 +50,9 @@ torch::Tensor dlpack_to_tensor(py::capsule capsule) {
     throw std::runtime_error("Invalid DLPack capsule");
   }
 
-  // Mark the capsule as consumed by renaming it
-  // This follows the DLPack protocol to prevent double-free
   PyCapsule_SetName(capsule.ptr(), "used_dltensor");
-
-  return at::fromDLPack(managed);
+  return ManagedBuffer::from_dlpack(managed);
 }
-
-}  // namespace
-
-namespace torchffmpeg {
-namespace {
 
 std::map<std::string, std::tuple<int64_t, int64_t, int64_t>> get_versions() {
   std::map<std::string, std::tuple<int64_t, int64_t, int64_t>> ret;
@@ -177,7 +169,7 @@ static int read_func(void* opaque, uint8_t* buf, int buf_size) {
     if (chunk_len == 0) {
       break;
     }
-    TORCH_CHECK(
+    TFMPEG_CHECK(
         chunk_len <= request,
         "Requested up to ",
         request,
@@ -280,7 +272,7 @@ static int64_t seek_bytes(void* opaque, int64_t offset, int whence) {
   } else if (whence == SEEK_END) {
     wrapper->index = wrapper->src.size() + offset;
   } else {
-    TORCH_INTERNAL_ASSERT(false, "Unexpected whence value: ", whence);
+    TFMPEG_INTERNAL_ASSERT(false, "Unexpected whence value: ", whence);
   }
   return static_cast<int64_t>(wrapper->index);
 }
@@ -301,6 +293,49 @@ struct StreamingMediaDecoderBytes : private BytesWrapper,
             seek_bytes,
             option) {}
 };
+
+//////////////////////////////////////////////////////////////////////////////
+// Helper: pop_chunks_dlpack for any decoder type
+//////////////////////////////////////////////////////////////////////////////
+template <typename DecoderT>
+py::list pop_chunks_dlpack_impl(DecoderT& self) {
+  py::list result;
+  auto chunks = self.pop_chunks();
+  for (auto& chunk : chunks) {
+    if (chunk.has_value()) {
+      py::tuple item = py::make_tuple(
+          managed_buffer_to_capsule(chunk->frames),
+          chunk->pts);
+      result.append(item);
+    } else {
+      result.append(py::none());
+    }
+  }
+  return result;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Helper: write_*_chunk_dlpack for any encoder type
+//////////////////////////////////////////////////////////////////////////////
+template <typename EncoderT>
+void write_audio_chunk_dlpack_impl(
+    EncoderT& self,
+    int i,
+    py::capsule capsule,
+    const std::optional<double>& pts) {
+  auto buf = capsule_to_managed_buffer(std::move(capsule));
+  self.write_audio_chunk(i, buf, pts);
+}
+
+template <typename EncoderT>
+void write_video_chunk_dlpack_impl(
+    EncoderT& self,
+    int i,
+    py::capsule capsule,
+    const std::optional<double>& pts) {
+  auto buf = capsule_to_managed_buffer(std::move(capsule));
+  self.write_video_chunk(i, buf, pts);
+}
 
 PYBIND11_MODULE(_torchffmpeg, m) {
   m.def("init", []() { avdevice_register_all(); });
@@ -328,13 +363,6 @@ PYBIND11_MODULE(_torchffmpeg, m) {
   m.def("get_output_protocols", []() { return get_protocols(true); });
   m.def("clear_cuda_context_cache", &clear_cuda_context_cache);
 
-  py::class_<Chunk>(m, "Chunk", py::module_local())
-      .def_readwrite("frames", &Chunk::frames)
-      .def_readwrite("pts", &Chunk::pts)
-      // DLPack export method - returns the frames as a PyCapsule
-      .def("frames_dlpack", [](const Chunk& c) {
-        return tensor_to_dlpack(c.frames);
-      });
   py::class_<PacketIndexEntry>(m, "PacketIndexEntry", py::module_local())
       .def_readonly("pts", &PacketIndexEntry::pts)
       .def_readonly("pts_seconds", &PacketIndexEntry::pts_seconds)
@@ -351,21 +379,8 @@ PYBIND11_MODULE(_torchffmpeg, m) {
       .def("add_video_stream", &StreamingMediaEncoder::add_video_stream)
       .def("dump_format", &StreamingMediaEncoder::dump_format)
       .def("open", &StreamingMediaEncoder::open)
-      .def("write_audio_chunk", &StreamingMediaEncoder::write_audio_chunk)
-      .def("write_video_chunk", &StreamingMediaEncoder::write_video_chunk)
-      // DLPack-based write methods - accept PyCapsule containing DLManagedTensor
-      .def("write_audio_chunk_dlpack", [](StreamingMediaEncoder& self, int i,
-                                           py::capsule capsule,
-                                           const std::optional<double>& pts) {
-        torch::Tensor tensor = dlpack_to_tensor(capsule);
-        self.write_audio_chunk(i, tensor, pts);
-      })
-      .def("write_video_chunk_dlpack", [](StreamingMediaEncoder& self, int i,
-                                           py::capsule capsule,
-                                           const std::optional<double>& pts) {
-        torch::Tensor tensor = dlpack_to_tensor(capsule);
-        self.write_video_chunk(i, tensor, pts);
-      })
+      .def("write_audio_chunk_dlpack", &write_audio_chunk_dlpack_impl<StreamingMediaEncoder>)
+      .def("write_video_chunk_dlpack", &write_video_chunk_dlpack_impl<StreamingMediaEncoder>)
       .def("flush", &StreamingMediaEncoder::flush)
       .def("close", &StreamingMediaEncoder::close);
   py::class_<StreamingMediaEncoderFileObj>(
@@ -376,23 +391,8 @@ PYBIND11_MODULE(_torchffmpeg, m) {
       .def("add_video_stream", &StreamingMediaEncoderFileObj::add_video_stream)
       .def("dump_format", &StreamingMediaEncoderFileObj::dump_format)
       .def("open", &StreamingMediaEncoderFileObj::open)
-      .def(
-          "write_audio_chunk", &StreamingMediaEncoderFileObj::write_audio_chunk)
-      .def(
-          "write_video_chunk", &StreamingMediaEncoderFileObj::write_video_chunk)
-      // DLPack-based write methods
-      .def("write_audio_chunk_dlpack", [](StreamingMediaEncoderFileObj& self, int i,
-                                           py::capsule capsule,
-                                           const std::optional<double>& pts) {
-        torch::Tensor tensor = dlpack_to_tensor(capsule);
-        self.write_audio_chunk(i, tensor, pts);
-      })
-      .def("write_video_chunk_dlpack", [](StreamingMediaEncoderFileObj& self, int i,
-                                           py::capsule capsule,
-                                           const std::optional<double>& pts) {
-        torch::Tensor tensor = dlpack_to_tensor(capsule);
-        self.write_video_chunk(i, tensor, pts);
-      })
+      .def("write_audio_chunk_dlpack", &write_audio_chunk_dlpack_impl<StreamingMediaEncoderFileObj>)
+      .def("write_video_chunk_dlpack", &write_video_chunk_dlpack_impl<StreamingMediaEncoderFileObj>)
       .def("flush", &StreamingMediaEncoderFileObj::flush)
       .def("close", &StreamingMediaEncoderFileObj::close);
   py::class_<OutputStreamInfo>(m, "OutputStreamInfo", py::module_local())
@@ -412,7 +412,7 @@ PYBIND11_MODULE(_torchffmpeg, m) {
               case AVMEDIA_TYPE_VIDEO:
                 return av_get_pix_fmt_name((AVPixelFormat)(o.format));
               default:
-                TORCH_INTERNAL_ASSERT(
+                TFMPEG_INTERNAL_ASSERT(
                     false,
                     "FilterGraph is returning unexpected media type: ",
                     av_get_media_type_string(o.media_type));
@@ -425,7 +425,7 @@ PYBIND11_MODULE(_torchffmpeg, m) {
       .def_property_readonly(
           "frame_rate", [](const OutputStreamInfo& o) -> double {
             if (o.frame_rate.den == 0) {
-              TORCH_WARN(
+              TFMPEG_WARN(
                   "Invalid frame rate is found: ",
                   o.frame_rate.num,
                   "/",
@@ -483,23 +483,7 @@ PYBIND11_MODULE(_torchffmpeg, m) {
       .def("process_all_packets", &StreamingMediaDecoder::process_all_packets)
       .def("fill_buffer", &StreamingMediaDecoder::fill_buffer)
       .def("is_buffer_ready", &StreamingMediaDecoder::is_buffer_ready)
-      .def("pop_chunks", &StreamingMediaDecoder::pop_chunks)
-      // DLPack-based pop_chunks - returns list of (capsule, pts) tuples or None
-      .def("pop_chunks_dlpack", [](StreamingMediaDecoder& self) {
-        py::list result;
-        auto chunks = self.pop_chunks();
-        for (auto& chunk : chunks) {
-          if (chunk.has_value()) {
-            py::tuple item = py::make_tuple(
-                tensor_to_dlpack(chunk->frames),
-                chunk->pts);
-            result.append(item);
-          } else {
-            result.append(py::none());
-          }
-        }
-        return result;
-      })
+      .def("pop_chunks_dlpack", &pop_chunks_dlpack_impl<StreamingMediaDecoder>)
       .def("build_packet_index", &StreamingMediaDecoder::build_packet_index);
   py::class_<StreamingMediaDecoderFileObj>(
       m, "StreamingMediaDecoderFileObj", py::module_local())
@@ -537,23 +521,7 @@ PYBIND11_MODULE(_torchffmpeg, m) {
           &StreamingMediaDecoderFileObj::process_all_packets)
       .def("fill_buffer", &StreamingMediaDecoderFileObj::fill_buffer)
       .def("is_buffer_ready", &StreamingMediaDecoderFileObj::is_buffer_ready)
-      .def("pop_chunks", &StreamingMediaDecoderFileObj::pop_chunks)
-      // DLPack-based pop_chunks
-      .def("pop_chunks_dlpack", [](StreamingMediaDecoderFileObj& self) {
-        py::list result;
-        auto chunks = self.pop_chunks();
-        for (auto& chunk : chunks) {
-          if (chunk.has_value()) {
-            py::tuple item = py::make_tuple(
-                tensor_to_dlpack(chunk->frames),
-                chunk->pts);
-            result.append(item);
-          } else {
-            result.append(py::none());
-          }
-        }
-        return result;
-      })
+      .def("pop_chunks_dlpack", &pop_chunks_dlpack_impl<StreamingMediaDecoderFileObj>)
       .def("build_packet_index", &StreamingMediaDecoderFileObj::build_packet_index);
   py::class_<StreamingMediaDecoderBytes>(
       m, "StreamingMediaDecoderBytes", py::module_local())
@@ -591,23 +559,7 @@ PYBIND11_MODULE(_torchffmpeg, m) {
           &StreamingMediaDecoderBytes::process_all_packets)
       .def("fill_buffer", &StreamingMediaDecoderBytes::fill_buffer)
       .def("is_buffer_ready", &StreamingMediaDecoderBytes::is_buffer_ready)
-      .def("pop_chunks", &StreamingMediaDecoderBytes::pop_chunks)
-      // DLPack-based pop_chunks
-      .def("pop_chunks_dlpack", [](StreamingMediaDecoderBytes& self) {
-        py::list result;
-        auto chunks = self.pop_chunks();
-        for (auto& chunk : chunks) {
-          if (chunk.has_value()) {
-            py::tuple item = py::make_tuple(
-                tensor_to_dlpack(chunk->frames),
-                chunk->pts);
-            result.append(item);
-          } else {
-            result.append(py::none());
-          }
-        }
-        return result;
-      })
+      .def("pop_chunks_dlpack", &pop_chunks_dlpack_impl<StreamingMediaDecoderBytes>)
       .def("build_packet_index", &StreamingMediaDecoderBytes::build_packet_index);
 }
 

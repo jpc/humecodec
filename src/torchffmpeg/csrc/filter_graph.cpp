@@ -6,7 +6,7 @@ namespace torchffmpeg {
 namespace {
 AVFilterGraph* get_filter_graph() {
   AVFilterGraph* ptr = avfilter_graph_alloc();
-  TORCH_CHECK(ptr, "Failed to allocate resource.");
+  TFMPEG_CHECK(ptr, "Failed to allocate resource.");
   ptr->nb_threads = 1;
   return ptr;
 }
@@ -111,7 +111,7 @@ void FilterGraph::add_video_src(
 void FilterGraph::add_src(const AVFilter* buffersrc, const std::string& args) {
   int ret = avfilter_graph_create_filter(
       &buffersrc_ctx, buffersrc, "in", args.c_str(), nullptr, graph);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to create input filter: \"" + args + "\" (" + av_err2string(ret) +
           ")");
@@ -126,10 +126,10 @@ void FilterGraph::add_video_sink() {
 }
 
 void FilterGraph::add_sink(const AVFilter* buffersink) {
-  TORCH_CHECK(!buffersink_ctx, "Sink buffer is already allocated.");
+  TFMPEG_CHECK(!buffersink_ctx, "Sink buffer is already allocated.");
   int ret = avfilter_graph_create_filter(
       &buffersink_ctx, buffersink, "out", nullptr, nullptr, graph);
-  TORCH_CHECK(ret >= 0, "Failed to create output filter.");
+  TFMPEG_CHECK(ret >= 0, "Failed to create output filter.");
 }
 
 namespace {
@@ -142,7 +142,7 @@ class InOuts {
  public:
   InOuts(const char* name, AVFilterContext* pCtx) {
     p = avfilter_inout_alloc();
-    TORCH_CHECK(p, "Failed to allocate AVFilterInOut.");
+    TFMPEG_CHECK(p, "Failed to allocate AVFilterInOut.");
     p->name = av_strdup(name);
     p->filter_ctx = pCtx;
     p->pad_idx = 0;
@@ -164,7 +164,7 @@ void FilterGraph::add_process(const std::string& filter_description) {
   int ret = avfilter_graph_parse_ptr(
       graph, filter_description.c_str(), out, in, nullptr);
 
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to create the filter from \"" + filter_description + "\" (" +
           av_err2string(ret) + ".)");
@@ -181,14 +181,14 @@ void FilterGraph::create_filter(AVBufferRef* hw_frames_ctx) {
   (void)hw_frames_ctx;
 #endif
   int ret = avfilter_graph_config(graph, nullptr);
-  TORCH_CHECK(ret >= 0, "Failed to configure the graph: " + av_err2string(ret));
+  TFMPEG_CHECK(ret >= 0, "Failed to configure the graph: " + av_err2string(ret));
 }
 
 //////////////////////////////////////////////////////////////////////////////
 // Query methods
 //////////////////////////////////////////////////////////////////////////////
 FilterGraphOutputInfo FilterGraph::get_output_info() const {
-  TORCH_INTERNAL_ASSERT(buffersink_ctx, "FilterGraph is not initialized.");
+  TFMPEG_INTERNAL_ASSERT(buffersink_ctx, "FilterGraph is not initialized.");
   AVFilterLink* l = buffersink_ctx->inputs[0];
   FilterGraphOutputInfo ret{};
   ret.type = l->type;

@@ -14,18 +14,18 @@ Encoder::Encoder(
 /// @param frame Frame data to encode
 void Encoder::encode(AVFrame* frame) {
   int ret = avcodec_send_frame(codec_ctx, frame);
-  TORCH_CHECK(ret >= 0, "Failed to encode frame (", av_err2string(ret), ").");
+  TFMPEG_CHECK(ret >= 0, "Failed to encode frame (", av_err2string(ret), ").");
   while (ret >= 0) {
     ret = avcodec_receive_packet(codec_ctx, packet);
     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
       if (ret == AVERROR_EOF) {
         ret = av_interleaved_write_frame(format_ctx, nullptr);
-        TORCH_CHECK(
+        TFMPEG_CHECK(
             ret >= 0, "Failed to flush packet (", av_err2string(ret), ").");
       }
       break;
     } else {
-      TORCH_CHECK(
+      TFMPEG_CHECK(
           ret >= 0,
           "Failed to fetch encoded packet (",
           av_err2string(ret),
@@ -39,7 +39,7 @@ void Encoder::encode(AVFrame* frame) {
     packet->stream_index = stream->index;
 
     ret = av_interleaved_write_frame(format_ctx, packet);
-    TORCH_CHECK(ret >= 0, "Failed to write packet (", av_err2string(ret), ").");
+    TFMPEG_CHECK(ret >= 0, "Failed to write packet (", av_err2string(ret), ").");
   }
 }
 

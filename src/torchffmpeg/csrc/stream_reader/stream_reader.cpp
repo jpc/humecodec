@@ -1,5 +1,6 @@
 #include "torchffmpeg/csrc/ffmpeg.h"
 #include "torchffmpeg/csrc/stream_reader/stream_reader.h"
+#include "torchffmpeg/csrc/tensor_view.h"
 #include <chrono>
 #include <sstream>
 #include <stdexcept>
@@ -19,7 +20,7 @@ AVFormatContext* get_input_format_context(
     const std::optional<OptionDict>& option,
     AVIOContext* io_ctx) {
   AVFormatContext* p = avformat_alloc_context();
-  TORCH_CHECK(p, "Failed to allocate AVFormatContext.");
+  TFMPEG_CHECK(p, "Failed to allocate AVFormatContext.");
   if (io_ctx) {
     p->pb = io_ctx;
   }
@@ -29,7 +30,7 @@ AVFormatContext* get_input_format_context(
       std::string format_str = format.value();
       AVFORMAT_CONST AVInputFormat* pInput =
           av_find_input_format(format_str.c_str());
-      TORCH_CHECK(pInput, "Unsupported device/format: \"", format_str, "\"");
+      TFMPEG_CHECK(pInput, "Unsupported device/format: \"", format_str, "\"");
       return pInput;
     }
     return nullptr;
@@ -39,7 +40,7 @@ AVFormatContext* get_input_format_context(
   int ret = avformat_open_input(&p, src.c_str(), pInputFormat, &opt);
   clean_up_dict(opt);
 
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to open the input \"",
       src,
@@ -53,12 +54,12 @@ AVFormatContext* get_input_format_context(
 StreamingMediaDecoder::StreamingMediaDecoder(AVFormatContext* p)
     : format_ctx(p) {
   int ret = avformat_find_stream_info(format_ctx, nullptr);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0, "Failed to find stream information: ", av_err2string(ret));
 
   processors =
       std::vector<std::unique_ptr<StreamProcessor>>(format_ctx->nb_streams);
-  for (int i = 0; i < format_ctx->nb_streams; ++i) {
+  for (int i = 0; i < static_cast<int>(format_ctx->nb_streams); ++i) {
     switch (format_ctx->streams[i]->codecpar->codec_type) {
       case AVMEDIA_TYPE_AUDIO:
       case AVMEDIA_TYPE_VIDEO:
@@ -90,12 +91,12 @@ StreamingMediaDecoder::StreamingMediaDecoder(
 // Helper methods
 //////////////////////////////////////////////////////////////////////////////
 void validate_open_stream(AVFormatContext* format_ctx) {
-  TORCH_CHECK(format_ctx, "Stream is not open.");
+  TFMPEG_CHECK(format_ctx, "Stream is not open.");
 }
 
 void validate_src_stream_index(AVFormatContext* format_ctx, int i) {
   validate_open_stream(format_ctx);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       i >= 0 && i < static_cast<int>(format_ctx->nb_streams),
       "Source stream index out of range");
 }
@@ -105,7 +106,7 @@ void validate_src_stream_type(
     int i,
     AVMediaType type) {
   validate_src_stream_index(format_ctx, i);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       format_ctx->streams[i]->codecpar->codec_type == type,
       "Stream ",
       i,
@@ -188,7 +189,7 @@ SrcStreamInfo StreamingMediaDecoder::get_src_stream_info(int i) const {
 namespace {
 AVCodecParameters* get_codecpar() {
   AVCodecParameters* ptr = avcodec_parameters_alloc();
-  TORCH_CHECK(ptr, "Failed to allocate resource.");
+  TFMPEG_CHECK(ptr, "Failed to allocate resource.");
   return ptr;
 }
 } // namespace
@@ -199,7 +200,7 @@ StreamParams StreamingMediaDecoder::get_src_stream_params(int i) {
 
   AVCodecParametersPtr codec_params(get_codecpar());
   int ret = avcodec_parameters_copy(codec_params, stream->codecpar);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to copy the stream's codec parameters. (",
       av_err2string(ret),
@@ -212,7 +213,7 @@ int64_t StreamingMediaDecoder::num_out_streams() const {
 }
 
 OutputStreamInfo StreamingMediaDecoder::get_out_stream_info(int i) const {
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       i >= 0 && static_cast<size_t>(i) < stream_indices.size(),
       "Output stream index out of range");
   int i_src = stream_indices[i].first;
@@ -266,8 +267,8 @@ bool StreamingMediaDecoder::is_buffer_ready() const {
 // Configure methods
 ////////////////////////////////////////////////////////////////////////////////
 void StreamingMediaDecoder::seek(double timestamp_s, int64_t mode) {
-  TORCH_CHECK(timestamp_s >= 0, "timestamp must be non-negative.");
-  TORCH_CHECK(
+  TFMPEG_CHECK(timestamp_s >= 0, "timestamp must be non-negative.");
+  TFMPEG_CHECK(
       format_ctx->nb_streams > 0,
       "At least one stream must exist in this context");
 
@@ -286,14 +287,14 @@ void StreamingMediaDecoder::seek(double timestamp_s, int64_t mode) {
       seek_timestamp = timestamp_av_tb;
       break;
     default:
-      TORCH_CHECK(false, "Invalid mode value: ", mode);
+      TFMPEG_CHECK(false, "Invalid mode value: ", mode);
   }
 
   int ret = av_seek_frame(format_ctx, -1, timestamp_av_tb, flag);
 
   if (ret < 0) {
     seek_timestamp = 0;
-    TORCH_CHECK(false, "Failed to seek. (" + av_err2string(ret) + ".)");
+    TFMPEG_CHECK(false, "Failed to seek. (" + av_err2string(ret) + ".)");
   }
   for (const auto& it : processors) {
     if (it) {
@@ -304,10 +305,10 @@ void StreamingMediaDecoder::seek(double timestamp_s, int64_t mode) {
 }
 
 void StreamingMediaDecoder::seek_to_byte_offset(int64_t offset) {
-  TORCH_CHECK(offset >= 0, "offset must be non-negative.");
+  TFMPEG_CHECK(offset >= 0, "offset must be non-negative.");
 
   int ret = av_seek_frame(format_ctx, -1, offset, AVSEEK_FLAG_BYTE);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to seek to byte offset ",
       offset,
@@ -339,7 +340,7 @@ void StreamingMediaDecoder::add_audio_stream(
       filter_desc.value_or("anull"),
       decoder,
       decoder_option,
-      torch::Device(torch::DeviceType::CPU));
+      device::cpu());
 }
 
 void StreamingMediaDecoder::add_video_stream(
@@ -350,17 +351,23 @@ void StreamingMediaDecoder::add_video_stream(
     const std::optional<std::string>& decoder,
     const std::optional<OptionDict>& decoder_option,
     const std::optional<std::string>& hw_accel) {
-  const torch::Device device = [&]() {
+  const DLDevice dev = [&]() -> DLDevice {
     if (!hw_accel) {
-      return torch::Device{c10::DeviceType::CPU};
+      return device::cpu();
     }
 #ifdef USE_CUDA
-    torch::Device d{hw_accel.value()};
-    TORCH_CHECK(
-        d.is_cuda(), "Only CUDA is supported for HW acceleration. Found: ", d);
-    return d;
+    // Parse "cuda:N" or "cuda" string
+    const std::string& accel = hw_accel.value();
+    TFMPEG_CHECK(
+        accel.find("cuda") == 0,
+        "Only CUDA is supported for HW acceleration. Found: ", accel);
+    int device_id = 0;
+    if (accel.size() > 5 && accel[4] == ':') {
+      device_id = std::stoi(accel.substr(5));
+    }
+    return device::cuda(device_id);
 #else
-    TORCH_CHECK(
+    TFMPEG_CHECK(
         false,
         "torchffmpeg is not compiled with CUDA support. Hardware acceleration is not available.");
 #endif
@@ -374,7 +381,7 @@ void StreamingMediaDecoder::add_video_stream(
       filter_desc.value_or("null"),
       decoder,
       decoder_option,
-      device);
+      dev);
 }
 
 void StreamingMediaDecoder::add_packet_stream(int i) {
@@ -393,11 +400,11 @@ void StreamingMediaDecoder::add_stream(
     const std::string& filter_desc,
     const std::optional<std::string>& decoder,
     const std::optional<OptionDict>& decoder_option,
-    const torch::Device& device) {
+    const DLDevice& dev) {
   validate_src_stream_type(format_ctx, i, media_type);
 
   AVStream* stream = format_ctx->streams[i];
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       stream->codecpar->format != -1,
       "Failed to detect the source stream format.");
 
@@ -407,11 +414,11 @@ void StreamingMediaDecoder::add_stream(
   }
   if (!processors[i]->is_decoder_set()) {
     processors[i]->set_decoder(
-        stream->codecpar, decoder, decoder_option, device);
+        stream->codecpar, decoder, decoder_option, dev);
   } else {
-    TORCH_CHECK(
+    TFMPEG_CHECK(
         !decoder && (!decoder_option || decoder_option.value().size() == 0),
-        "Decoder options were provided, but the decoder has already been initialized.")
+        "Decoder options were provided, but the decoder has already been initialized.");
   }
 
   stream->discard = AVDISCARD_DEFAULT;
@@ -423,19 +430,19 @@ void StreamingMediaDecoder::add_stream(
       case AVMEDIA_TYPE_VIDEO:
         return av_guess_frame_rate(format_ctx, stream, nullptr);
       default:
-        TORCH_INTERNAL_ASSERT(
+        TFMPEG_INTERNAL_ASSERT(
             false,
             "Unexpected media type is given: ",
             av_get_media_type_string(media_type));
     }
   }();
   int key = processors[i]->add_stream(
-      frames_per_chunk, num_chunks, frame_rate, filter_desc, device);
+      frames_per_chunk, num_chunks, frame_rate, filter_desc, dev);
   stream_indices.push_back(std::make_pair<>(i, key));
 }
 
 void StreamingMediaDecoder::remove_stream(int64_t i) {
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       i >= 0 && static_cast<size_t>(i) < stream_indices.size(),
       "Output stream index out of range");
   auto it = stream_indices.begin() + i;
@@ -527,7 +534,7 @@ int StreamingMediaDecoder::process_packet(
     }
     return process_packet();
   }();
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       code >= 0, "Failed to process a packet. (" + av_err2string(code) + "). ");
   return code;
 }
@@ -579,7 +586,7 @@ std::vector<PacketIndexEntry> StreamingMediaDecoder::build_packet_index(
 
   // Seek to the beginning of the file
   int ret = av_seek_frame(format_ctx, stream_index, 0, AVSEEK_FLAG_BACKWARD);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to seek to beginning of stream. (",
       av_err2string(ret),
@@ -617,12 +624,12 @@ AVIOContext* get_io_context(
     int (*read_packet)(void* opaque, uint8_t* buf, int buf_size),
     int64_t (*seek)(void* opaque, int64_t offset, int whence)) {
   unsigned char* buffer = static_cast<unsigned char*>(av_malloc(buffer_size));
-  TORCH_CHECK(buffer, "Failed to allocate buffer.");
+  TFMPEG_CHECK(buffer, "Failed to allocate buffer.");
   AVIOContext* io_ctx = avio_alloc_context(
       buffer, buffer_size, 0, opaque, read_packet, nullptr, seek);
   if (!io_ctx) {
     av_freep(&buffer);
-    TORCH_CHECK(false, "Failed to allocate AVIOContext.");
+    TFMPEG_CHECK(false, "Failed to allocate AVIOContext.");
   }
   return io_ctx;
 }

@@ -1,5 +1,6 @@
 #include "torchffmpeg/csrc/hw_context.h"
 #include "torchffmpeg/csrc/stream_reader/stream_processor.h"
+#include "torchffmpeg/csrc/tensor_view.h"
 #include <string_view>
 
 namespace torchffmpeg {
@@ -12,17 +13,17 @@ AVCodecContextPtr alloc_codec_context(
     if (decoder_name) {
       const AVCodec* c =
           avcodec_find_decoder_by_name(decoder_name.value().c_str());
-      TORCH_CHECK(c, "Unsupported codec: ", decoder_name.value());
+      TFMPEG_CHECK(c, "Unsupported codec: ", decoder_name.value());
       return c;
     } else {
       const AVCodec* c = avcodec_find_decoder(codec_id);
-      TORCH_CHECK(c, "Unsupported codec: ", avcodec_get_name(codec_id));
+      TFMPEG_CHECK(c, "Unsupported codec: ", avcodec_get_name(codec_id));
       return c;
     }
   }();
 
   AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
-  TORCH_CHECK(codec_ctx, "Failed to allocate CodecContext.");
+  TFMPEG_CHECK(codec_ctx, "Failed to allocate CodecContext.");
   return AVCodecContextPtr(codec_ctx);
 }
 
@@ -38,7 +39,7 @@ const AVCodecHWConfig* get_cuda_config(const AVCodec* codec) {
       return config;
     }
   }
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       false,
       "CUDA device was requested, but the codec \"",
       codec->name,
@@ -67,14 +68,14 @@ enum AVPixelFormat get_hw_format(
       return *p;
     }
   }
-  TORCH_WARN("Failed to get HW surface format.");
+  TFMPEG_WARN("Failed to get HW surface format.");
   return AV_PIX_FMT_NONE;
 }
 #endif // USE_CUDA
 
 AVBufferRef* get_hw_frames_ctx(AVCodecContext* codec_ctx) {
   AVBufferRef* p = av_hwframe_ctx_alloc(codec_ctx->hw_device_ctx);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       p,
       "Failed to allocate CUDA frame context from device context at ",
       codec_ctx->hw_device_ctx);
@@ -89,27 +90,27 @@ AVBufferRef* get_hw_frames_ctx(AVCodecContext* codec_ctx) {
     return p;
   }
   av_buffer_unref(&p);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       false, "Failed to initialize CUDA frame context: ", av_err2string(ret));
 }
 
 void configure_codec_context(
     AVCodecContext* codec_ctx,
     const AVCodecParameters* params,
-    const torch::Device& device) {
+    const DLDevice& dev) {
   int ret = avcodec_parameters_to_context(codec_ctx, params);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0, "Failed to set CodecContext parameter: ", av_err2string(ret));
 
-  if (device.type() == c10::DeviceType::CUDA) {
+  if (dev.device_type == kDLCUDA) {
 #ifndef USE_CUDA
-    TORCH_CHECK(false, "torchffmpeg is not compiled with CUDA support.");
+    TFMPEG_CHECK(false, "torchffmpeg is not compiled with CUDA support.");
 #else
     const AVCodecHWConfig* cfg = get_cuda_config(codec_ctx->codec);
     codec_ctx->opaque = static_cast<void*>(const_cast<AVCodecHWConfig*>(cfg));
     codec_ctx->get_format = get_hw_format;
-    codec_ctx->hw_device_ctx = av_buffer_ref(get_cuda_context(device.index()));
-    TORCH_INTERNAL_ASSERT(
+    codec_ctx->hw_device_ctx = av_buffer_ref(get_cuda_context(dev.device_id));
+    TFMPEG_INTERNAL_ASSERT(
         codec_ctx->hw_device_ctx, "Failed to reference HW device context.");
 #endif
   }
@@ -138,7 +139,7 @@ void open_codec(
 
   int ret = avcodec_open2(codec_ctx, codec_ctx->codec, &opts);
   clean_up_dict(opts);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0, "Failed to initialize CodecContext: ", av_err2string(ret));
 }
 
@@ -151,10 +152,10 @@ AVCodecContextPtr get_codec_ctx(
     const AVCodecParameters* params,
     const std::optional<std::string>& decoder_name,
     const std::optional<OptionDict>& decoder_option,
-    const torch::Device& device) {
+    const DLDevice& dev) {
   AVCodecContextPtr codec_ctx =
       alloc_codec_context(params->codec_id, decoder_name);
-  configure_codec_context(codec_ctx, params, device);
+  configure_codec_context(codec_ctx, params, dev);
   open_codec(codec_ctx, decoder_option);
   if (codec_ctx->hw_device_ctx) {
     codec_ctx->hw_frames_ctx = get_hw_frames_ctx(codec_ctx);
@@ -177,20 +178,20 @@ KeyType StreamProcessor::add_stream(
     int num_chunks,
     AVRational frame_rate,
     const std::string& filter_description,
-    const torch::Device& device) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+    const DLDevice& dev) {
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       is_decoder_set(), "Decoder hasn't been set.");
-  switch (device.type()) {
-    case torch::kCPU:
-      TORCH_CHECK(
+  switch (dev.device_type) {
+    case kDLCPU:
+      TFMPEG_CHECK(
           !codec_ctx->hw_device_ctx,
           "Decoding without Hardware acceleration is requested, however, "
           "the decoder has been already defined with a HW acceleration. "
           "Decoding a stream with and without HW acceleration simultaneously "
           "is not supported.");
       break;
-    case torch::kCUDA:
-      TORCH_CHECK(
+    case kDLCUDA:
+      TFMPEG_CHECK(
           codec_ctx->hw_device_ctx,
           "CUDA Hardware acceleration is requested, however, the decoder has "
           "been already defined without a HW acceleration. "
@@ -215,10 +216,10 @@ KeyType StreamProcessor::add_stream(
           std::forward_as_tuple(current_key),
           std::forward_as_tuple(get_video_process(
               stream_time_base, frame_rate, codec_ctx, filter_description,
-              frames_per_chunk, num_chunks, device)));
+              frames_per_chunk, num_chunks, dev)));
       return current_key++;
     default:
-      TORCH_CHECK(false, "Only Audio and Video are supported");
+      TFMPEG_CHECK(false, "Only Audio and Video are supported");
   }
 }
 
@@ -227,7 +228,7 @@ void StreamProcessor::remove_stream(KeyType key) {
 }
 
 void StreamProcessor::set_discard_timestamp(int64_t timestamp) {
-  TORCH_CHECK(timestamp >= 0, "timestamp must be non-negative.");
+  TFMPEG_CHECK(timestamp >= 0, "timestamp must be non-negative.");
   discard_before_pts =
       av_rescale_q(timestamp, av_get_time_base_q(), stream_time_base);
 }
@@ -236,9 +237,9 @@ void StreamProcessor::set_decoder(
     const AVCodecParameters* codecpar,
     const std::optional<std::string>& decoder_name,
     const std::optional<OptionDict>& decoder_option,
-    const torch::Device& device) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(!codec_ctx, "Decoder has already been set.");
-  codec_ctx = get_codec_ctx(codecpar, decoder_name, decoder_option, device);
+    const DLDevice& dev) {
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(!codec_ctx, "Decoder has already been set.");
+  codec_ctx = get_codec_ctx(codecpar, decoder_name, decoder_option, dev);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -270,7 +271,7 @@ bool StreamProcessor::is_decoder_set() const {
 // The streaming process
 ////////////////////////////////////////////////////////////////////////////////
 int StreamProcessor::process_packet(AVPacket* packet) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       is_decoder_set(),
       "Decoder must have been set prior to calling this function.");
   int ret = avcodec_send_packet(codec_ctx, packet);
@@ -308,7 +309,7 @@ int StreamProcessor::process_packet(AVPacket* packet) {
 }
 
 void StreamProcessor::flush() {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       is_decoder_set(),
       "Decoder must have been set prior to calling this function.");
   avcodec_flush_buffers(codec_ctx);

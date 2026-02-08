@@ -2,6 +2,7 @@
 #include "torchffmpeg/csrc/stream_reader/buffer/unchunked_buffer.h"
 #include "torchffmpeg/csrc/stream_reader/conversion.h"
 #include "torchffmpeg/csrc/stream_reader/post_process.h"
+#include "torchffmpeg/csrc/tensor_view.h"
 
 namespace torchffmpeg {
 namespace detail {
@@ -15,7 +16,7 @@ using FilterGraphFactory = std::function<FilterGraph(const std::string&)>;
 FilterGraphFactory get_audio_factory(
     AVRational time_base,
     AVCodecContext* codec_ctx) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO);
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO);
 #if LIBAVUTIL_VERSION_MAJOR >= 59
   // FFmpeg 7+ uses AVChannelLayout - convert to uint64_t for filter
   uint64_t channel_layout_val = 0;
@@ -60,7 +61,7 @@ FilterGraphFactory get_video_factory(
     AVRational time_base,
     AVRational frame_rate,
     AVCodecContext* codec_ctx) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(codec_ctx->codec_type == AVMEDIA_TYPE_VIDEO);
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(codec_ctx->codec_type == AVMEDIA_TYPE_VIDEO);
   return [fmt = codec_ctx->pix_fmt,
           time_base,
           frame_rate,
@@ -182,7 +183,7 @@ std::unique_ptr<IPostDecodeProcess> get_unchunked_audio_process(
     FilterGraphWrapper&& filter) {
   auto i = filter.filter.get_output_info();
 
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_INTERNAL_ASSERT(
       i.type == AVMEDIA_TYPE_AUDIO,
       "Unsupported media type found: ",
       av_get_media_type_string(i.type));
@@ -191,67 +192,67 @@ std::unique_ptr<IPostDecodeProcess> get_unchunked_audio_process(
 
   switch (auto fmt = (AVSampleFormat)i.format; fmt) {
     case AV_SAMPLE_FMT_U8: {
-      using C = AudioConverter<torch::kUInt8, false>;
+      using C = AudioConverter<kDLUInt, 8, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_S16: {
-      using C = AudioConverter<torch::kInt16, false>;
+      using C = AudioConverter<kDLInt, 16, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_S32: {
-      using C = AudioConverter<torch::kInt32, false>;
+      using C = AudioConverter<kDLInt, 32, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_S64: {
-      using C = AudioConverter<torch::kInt64, false>;
+      using C = AudioConverter<kDLInt, 64, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_FLT: {
-      using C = AudioConverter<torch::kFloat32, false>;
+      using C = AudioConverter<kDLFloat, 32, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_DBL: {
-      using C = AudioConverter<torch::kFloat64, false>;
+      using C = AudioConverter<kDLFloat, 64, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_U8P: {
-      using C = AudioConverter<torch::kUInt8, true>;
+      using C = AudioConverter<kDLUInt, 8, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_S16P: {
-      using C = AudioConverter<torch::kInt16, true>;
+      using C = AudioConverter<kDLInt, 16, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_S32P: {
-      using C = AudioConverter<torch::kInt32, true>;
+      using C = AudioConverter<kDLInt, 32, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_S64P: {
-      using C = AudioConverter<torch::kInt64, true>;
+      using C = AudioConverter<kDLInt, 64, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_FLTP: {
-      using C = AudioConverter<torch::kFloat32, true>;
+      using C = AudioConverter<kDLFloat, 32, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     case AV_SAMPLE_FMT_DBLP: {
-      using C = AudioConverter<torch::kFloat64, true>;
+      using C = AudioConverter<kDLFloat, 64, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, B{i.time_base});
     }
     default:
-      TORCH_INTERNAL_ASSERT(
+      TFMPEG_INTERNAL_ASSERT(
           false, "Unexpected audio type:", av_get_sample_fmt_name(fmt));
   }
 }
@@ -262,7 +263,7 @@ std::unique_ptr<IPostDecodeProcess> get_chunked_audio_process(
     int num_chunks) {
   auto i = filter.filter.get_output_info();
 
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       i.type == AVMEDIA_TYPE_AUDIO,
       "Unsupported media type found: ",
       av_get_media_type_string(i.type));
@@ -272,67 +273,67 @@ std::unique_ptr<IPostDecodeProcess> get_chunked_audio_process(
 
   switch (auto fmt = (AVSampleFormat)i.format; fmt) {
     case AV_SAMPLE_FMT_U8: {
-      using C = AudioConverter<torch::kUInt8, false>;
+      using C = AudioConverter<kDLUInt, 8, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_S16: {
-      using C = AudioConverter<torch::kInt16, false>;
+      using C = AudioConverter<kDLInt, 16, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_S32: {
-      using C = AudioConverter<torch::kInt32, false>;
+      using C = AudioConverter<kDLInt, 32, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_S64: {
-      using C = AudioConverter<torch::kInt64, false>;
+      using C = AudioConverter<kDLInt, 64, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_FLT: {
-      using C = AudioConverter<torch::kFloat32, false>;
+      using C = AudioConverter<kDLFloat, 32, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_DBL: {
-      using C = AudioConverter<torch::kFloat64, false>;
+      using C = AudioConverter<kDLFloat, 64, false>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_U8P: {
-      using C = AudioConverter<torch::kUInt8, true>;
+      using C = AudioConverter<kDLUInt, 8, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_S16P: {
-      using C = AudioConverter<torch::kInt16, true>;
+      using C = AudioConverter<kDLInt, 16, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_S32P: {
-      using C = AudioConverter<torch::kInt32, true>;
+      using C = AudioConverter<kDLInt, 32, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_S64P: {
-      using C = AudioConverter<torch::kInt64, true>;
+      using C = AudioConverter<kDLInt, 64, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_FLTP: {
-      using C = AudioConverter<torch::kFloat32, true>;
+      using C = AudioConverter<kDLFloat, 32, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     case AV_SAMPLE_FMT_DBLP: {
-      using C = AudioConverter<torch::kFloat64, true>;
+      using C = AudioConverter<kDLFloat, 64, true>;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter), C{i.num_channels}, std::move(buffer));
     }
     default:
-      TORCH_INTERNAL_ASSERT(
+      TFMPEG_INTERNAL_ASSERT(
           false, "Unexpected audio type:", av_get_sample_fmt_name(fmt));
   }
 }
@@ -344,7 +345,7 @@ std::unique_ptr<IPostDecodeProcess> get_unchunked_video_process(
     FilterGraphWrapper&& filter) {
   auto i = filter.filter.get_output_info();
 
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       i.type == AVMEDIA_TYPE_VIDEO,
       "Unsupported media type found: ",
       av_get_media_type_string(i.type));
@@ -400,7 +401,7 @@ std::unique_ptr<IPostDecodeProcess> get_unchunked_video_process(
           std::move(filter), C{h, w}, B{tb});
     }
     default: {
-      TORCH_INTERNAL_ASSERT(
+      TFMPEG_INTERNAL_ASSERT(
           false, "Unexpected video format found: ", av_get_pix_fmt_name(fmt));
     }
   }
@@ -408,15 +409,15 @@ std::unique_ptr<IPostDecodeProcess> get_unchunked_video_process(
 
 std::unique_ptr<IPostDecodeProcess> get_unchunked_cuda_video_process(
     FilterGraphWrapper&& filter,
-    const torch::Device& device) {
+    const DLDevice& dev) {
 #ifndef USE_CUDA
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_INTERNAL_ASSERT(
       false,
       "USE_CUDA is not defined, but CUDA decoding process was requested.");
 #else
   auto i = filter.filter.get_output_info();
 
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       i.type == AVMEDIA_TYPE_VIDEO,
       "Unsupported media type found: ",
       av_get_media_type_string(i.type));
@@ -426,26 +427,26 @@ std::unique_ptr<IPostDecodeProcess> get_unchunked_cuda_video_process(
     case AV_PIX_FMT_NV12: {
       using C = NV12CudaConverter;
       return std::make_unique<ProcessImpl<C, B>>(
-          std::move(filter), C{device}, B{i.time_base});
+          std::move(filter), C{dev}, B{i.time_base});
     }
     case AV_PIX_FMT_P010: {
       using C = P010CudaConverter;
       return std::make_unique<ProcessImpl<C, B>>(
-          std::move(filter), C{device}, B{i.time_base});
+          std::move(filter), C{dev}, B{i.time_base});
     }
     case AV_PIX_FMT_YUV444P: {
       using C = YUV444PCudaConverter;
       return std::make_unique<ProcessImpl<C, B>>(
-          std::move(filter), C{device}, B{i.time_base});
+          std::move(filter), C{dev}, B{i.time_base});
     }
     case AV_PIX_FMT_P016: {
-      TORCH_CHECK(
+      TFMPEG_CHECK(
           false,
           "Unsupported video format found in CUDA HW: ",
           av_get_pix_fmt_name(fmt));
     }
     default: {
-      TORCH_CHECK(
+      TFMPEG_CHECK(
           false,
           "Unexpected video format found in CUDA HW: ",
           av_get_pix_fmt_name(fmt));
@@ -460,7 +461,7 @@ std::unique_ptr<IPostDecodeProcess> get_chunked_video_process(
     int num_chunks) {
   auto i = filter.filter.get_output_info();
 
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       i.type == AVMEDIA_TYPE_VIDEO,
       "Unsupported media type found: ",
       av_get_media_type_string(i.type));
@@ -516,7 +517,7 @@ std::unique_ptr<IPostDecodeProcess> get_chunked_video_process(
           std::move(filter), C{h, w}, B{tb, frames_per_chunk, num_chunks});
     }
     default: {
-      TORCH_INTERNAL_ASSERT(
+      TFMPEG_INTERNAL_ASSERT(
           false, "Unexpected video format found: ", av_get_pix_fmt_name(fmt));
     }
   }
@@ -526,15 +527,15 @@ std::unique_ptr<IPostDecodeProcess> get_chunked_cuda_video_process(
     FilterGraphWrapper&& filter,
     int frames_per_chunk,
     int num_chunks,
-    const torch::Device& device) {
+    const DLDevice& dev) {
 #ifndef USE_CUDA
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_INTERNAL_ASSERT(
       false,
       "USE_CUDA is not defined, but CUDA decoding process was requested.");
 #else
   auto i = filter.filter.get_output_info();
 
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
       i.type == AVMEDIA_TYPE_VIDEO,
       "Unsupported media type found: ",
       av_get_media_type_string(i.type));
@@ -545,31 +546,31 @@ std::unique_ptr<IPostDecodeProcess> get_chunked_cuda_video_process(
       using C = NV12CudaConverter;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter),
-          C{device},
+          C{dev},
           B{i.time_base, frames_per_chunk, num_chunks});
     }
     case AV_PIX_FMT_P010: {
       using C = P010CudaConverter;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter),
-          C{device},
+          C{dev},
           B{i.time_base, frames_per_chunk, num_chunks});
     }
     case AV_PIX_FMT_YUV444P: {
       using C = YUV444PCudaConverter;
       return std::make_unique<ProcessImpl<C, B>>(
           std::move(filter),
-          C{device},
+          C{dev},
           B{i.time_base, frames_per_chunk, num_chunks});
     }
     case AV_PIX_FMT_P016: {
-      TORCH_CHECK(
+      TFMPEG_CHECK(
           false,
           "Unsupported video format found in CUDA HW: ",
           av_get_pix_fmt_name(fmt));
     }
     default: {
-      TORCH_CHECK(
+      TFMPEG_CHECK(
           false,
           "Unexpected video format found in CUDA HW: ",
           av_get_pix_fmt_name(fmt));
@@ -586,12 +587,12 @@ std::unique_ptr<IPostDecodeProcess> get_audio_process(
     const std::string& desc,
     int frames_per_chunk,
     int num_chunks) {
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       frames_per_chunk > 0 || frames_per_chunk == -1,
       "`frames_per_chunk` must be positive or -1. Found: ",
       frames_per_chunk);
 
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       num_chunks > 0 || num_chunks == -1,
       "`num_chunks` must be positive or -1. Found: ",
       num_chunks);
@@ -612,33 +613,34 @@ std::unique_ptr<IPostDecodeProcess> get_video_process(
     const std::string& desc,
     int frames_per_chunk,
     int num_chunks,
-    const torch::Device& device) {
-  TORCH_CHECK(
+    const DLDevice& dev) {
+  TFMPEG_CHECK(
       frames_per_chunk > 0 || frames_per_chunk == -1,
       "`frames_per_chunk` must be positive or -1. Found: ",
       frames_per_chunk);
 
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       num_chunks > 0 || num_chunks == -1,
       "`num_chunks` must be positive or -1. Found: ",
       num_chunks);
 
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
-      device.is_cuda() || device.is_cpu(), "Unexpected device type: ", device);
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(
+      dev.device_type == kDLCUDA || dev.device_type == kDLCPU,
+      "Unexpected device type: ", dev.device_type);
 
   detail::FilterGraphWrapper filter{
       input_time_base, frame_rate, codec_ctx, desc};
 
   if (frames_per_chunk == -1) {
-    if (device.is_cuda()) {
+    if (dev.device_type == kDLCUDA) {
       return detail::get_unchunked_cuda_video_process(
-          std::move(filter), device);
+          std::move(filter), dev);
     }
     return detail::get_unchunked_video_process(std::move(filter));
   }
-  if (device.is_cuda()) {
+  if (dev.device_type == kDLCUDA) {
     return detail::get_chunked_cuda_video_process(
-        std::move(filter), frames_per_chunk, num_chunks, device);
+        std::move(filter), frames_per_chunk, num_chunks, dev);
   }
   return detail::get_chunked_video_process(
       std::move(filter), frames_per_chunk, num_chunks);

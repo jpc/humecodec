@@ -124,34 +124,75 @@ def get_ffmpeg_config():
 
 
 # ---------------------------------------------------------------------------
-# Discover PyTorch for build-time compilation
+# Discover CUDA (without torch)
 # ---------------------------------------------------------------------------
 
-def get_torch_config():
-    """Get PyTorch include directories and library paths."""
-    try:
-        import torch
-        from torch.utils.cpp_extension import include_paths, library_paths
+def get_cuda_config():
+    """Detect CUDA toolkit for optional GPU support.
 
-        include_dirs = include_paths()
-        library_dirs = library_paths()
+    Returns dict with include_dirs, library_dirs, libraries, and cuda_available.
+    Detection priority:
+    1. CUDA_HOME / CUDA_PATH environment variable
+    2. nvcc on PATH
+    3. Common install locations (/usr/local/cuda)
+    """
+    cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
 
-        # Add torch libraries including Python bindings
-        libraries = ["torch", "torch_cpu", "torch_python", "c10"]
-        if torch.cuda.is_available():
-            libraries.extend(["torch_cuda", "c10_cuda"])
+    if not cuda_home:
+        # Try to find nvcc
+        try:
+            nvcc_path = subprocess.check_output(
+                ["which", "nvcc"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if nvcc_path:
+                # nvcc is typically at <cuda_home>/bin/nvcc
+                cuda_home = str(Path(nvcc_path).parent.parent)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
 
+    if not cuda_home:
+        # Check common locations
+        for candidate in ["/usr/local/cuda", "/opt/cuda"]:
+            if Path(candidate).exists():
+                cuda_home = candidate
+                break
+
+    if not cuda_home or not Path(cuda_home).exists():
         return {
-            "include_dirs": include_dirs,
-            "library_dirs": library_dirs,
-            "libraries": libraries,
-            "cuda_available": torch.cuda.is_available(),
+            "include_dirs": [],
+            "library_dirs": [],
+            "libraries": [],
+            "cuda_available": False,
         }
-    except ImportError:
-        raise RuntimeError(
-            "PyTorch is required to build torchffmpeg. "
-            "Please install PyTorch first: pip install torch"
-        )
+
+    cuda_home = Path(cuda_home)
+    include_dir = cuda_home / "include"
+    lib_dir = cuda_home / "lib64"
+    if not lib_dir.exists():
+        lib_dir = cuda_home / "lib"
+
+    # Verify cudart exists
+    has_cudart = any(
+        (lib_dir / name).exists()
+        for name in ["libcudart.so", "libcudart.dylib", "cudart.lib"]
+    )
+
+    if not has_cudart:
+        print(f"WARNING: CUDA found at {cuda_home} but cudart library not found")
+        return {
+            "include_dirs": [],
+            "library_dirs": [],
+            "libraries": [],
+            "cuda_available": False,
+        }
+
+    print(f"Using CUDA from: {cuda_home}")
+    return {
+        "include_dirs": [str(include_dir)] if include_dir.exists() else [],
+        "library_dirs": [str(lib_dir)] if lib_dir.exists() else [],
+        "libraries": ["cudart"],
+        "cuda_available": True,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -188,22 +229,22 @@ def collect_sources():
 # ---------------------------------------------------------------------------
 
 ffmpeg_cfg = get_ffmpeg_config()
-torch_cfg = get_torch_config()
+cuda_cfg = get_cuda_config()
 pybind_cfg = get_pybind11_config()
 
 # Combine all include directories
 include_dirs = (
     [str(Path(__file__).parent / "src")]  # so "torchffmpeg/csrc/..." includes work
     + ffmpeg_cfg["include_dirs"]
-    + torch_cfg["include_dirs"]
+    + cuda_cfg["include_dirs"]
     + pybind_cfg["include_dirs"]
 )
 
 # Combine all library directories
-library_dirs = ffmpeg_cfg["library_dirs"] + torch_cfg["library_dirs"]
+library_dirs = ffmpeg_cfg["library_dirs"] + cuda_cfg["library_dirs"]
 
 # Combine all libraries
-libraries = ffmpeg_cfg["libraries"] + torch_cfg["libraries"]
+libraries = ffmpeg_cfg["libraries"] + cuda_cfg["libraries"]
 
 # Compile arguments
 extra_compile_args = ["-std=c++17", "-fPIC"] + ffmpeg_cfg["extra_compile_args"]
@@ -211,13 +252,9 @@ extra_compile_args = ["-std=c++17", "-fPIC"] + ffmpeg_cfg["extra_compile_args"]
 # Link arguments
 extra_link_args = ffmpeg_cfg["extra_link_args"]
 
-# Add rpath for torch libraries (they're not bundled)
-for lib_dir in torch_cfg["library_dirs"]:
-    extra_link_args.append(f"-Wl,-rpath,{lib_dir}")
-
 # Define macros
 define_macros = []
-if torch_cfg["cuda_available"]:
+if cuda_cfg["cuda_available"]:
     define_macros.append(("USE_CUDA", None))
 
 ext = Extension(

@@ -1,20 +1,20 @@
 #pragma once
 #include "torchffmpeg/csrc/ffmpeg.h"
-#include <torch/types.h>
+#include "torchffmpeg/csrc/managed_buffer.h"
+#include "torchffmpeg/csrc/tensor_view.h"
 
 namespace torchffmpeg {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Audio
 ////////////////////////////////////////////////////////////////////////////////
-template <c10::ScalarType dtype, bool is_planar>
+template <DLDataTypeCode type_code, uint8_t bits, bool is_planar>
 class AudioConverter {
   const int num_channels;
 
  public:
   explicit AudioConverter(int num_channels);
-  torch::Tensor convert(const AVFrame* src);
-  void convert(const AVFrame* src, torch::Tensor& dst);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,18 +29,16 @@ struct ImageConverterBase {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Interlaced Images - NHWC
+// Interlaced Images - output as NCHW
 ////////////////////////////////////////////////////////////////////////////////
 struct InterlacedImageConverter : public ImageConverterBase {
   using ImageConverterBase::ImageConverterBase;
-  torch::Tensor convert(const AVFrame* src);
-  void convert(const AVFrame* src, torch::Tensor& dst);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 struct Interlaced16BitImageConverter : public ImageConverterBase {
   using ImageConverterBase::ImageConverterBase;
-  torch::Tensor convert(const AVFrame* src);
-  void convert(const AVFrame* src, torch::Tensor& dst);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -48,8 +46,7 @@ struct Interlaced16BitImageConverter : public ImageConverterBase {
 ////////////////////////////////////////////////////////////////////////////////
 struct PlanarImageConverter : public ImageConverterBase {
   using ImageConverterBase::ImageConverterBase;
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -58,57 +55,47 @@ struct PlanarImageConverter : public ImageConverterBase {
 class YUV420PConverter : public ImageConverterBase {
  public:
   YUV420PConverter(int height, int width);
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 class YUV420P10LEConverter : public ImageConverterBase {
  public:
   YUV420P10LEConverter(int height, int width);
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 class NV12Converter : public ImageConverterBase {
  public:
   NV12Converter(int height, int width);
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 #ifdef USE_CUDA
 
 struct CudaImageConverterBase {
-  const torch::Device device;
+  const DLDevice cuda_device;
   bool init = false;
   int height = -1;
   int width = -1;
-  explicit CudaImageConverterBase(const torch::Device& device);
+  explicit CudaImageConverterBase(const DLDevice& dev);
 };
 
 class NV12CudaConverter : CudaImageConverterBase {
-  torch::Tensor tmp_uv{};
-
  public:
-  explicit NV12CudaConverter(const torch::Device& device);
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  explicit NV12CudaConverter(const DLDevice& dev);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 class P010CudaConverter : CudaImageConverterBase {
-  torch::Tensor tmp_uv{};
-
  public:
-  explicit P010CudaConverter(const torch::Device& device);
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  explicit P010CudaConverter(const DLDevice& dev);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 class YUV444PCudaConverter : CudaImageConverterBase {
  public:
-  explicit YUV444PCudaConverter(const torch::Device& device);
-  void convert(const AVFrame* src, torch::Tensor& dst);
-  torch::Tensor convert(const AVFrame* src);
+  explicit YUV444PCudaConverter(const DLDevice& dev);
+  ManagedBuffer convert(const AVFrame* src);
 };
 
 #endif

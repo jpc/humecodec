@@ -6,10 +6,10 @@ extern "C" {
 
 #include "torchffmpeg/csrc/ffmpeg.h"
 #include "torchffmpeg/csrc/filter_graph.h"
+#include "torchffmpeg/csrc/managed_buffer.h"
 #include "torchffmpeg/csrc/stream_writer/encode_process.h"
 #include "torchffmpeg/csrc/stream_writer/packet_writer.h"
 #include "torchffmpeg/csrc/stream_writer/types.h"
-#include <torch/types.h>
 
 namespace torchffmpeg {
 
@@ -120,11 +120,11 @@ class StreamingMediaEncoder {
 
   void write_audio_chunk(
       int i,
-      const torch::Tensor& frames,
+      const ManagedBuffer& frames,
       const std::optional<double>& pts = std::nullopt);
   void write_video_chunk(
       int i,
-      const torch::Tensor& frames,
+      const ManagedBuffer& frames,
       const std::optional<double>& pts = std::nullopt);
   void write_frame(int i, AVFrame* frame);
   void write_packet(const AVPacketPtr& packet);

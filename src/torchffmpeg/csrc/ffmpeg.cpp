@@ -1,4 +1,3 @@
-#include <c10/util/Exception.h>
 #include "torchffmpeg/csrc/ffmpeg.h"
 #include <sstream>
 #include <stdexcept>
@@ -29,10 +28,14 @@ void clean_up_dict(AVDictionary* p) {
       unused_keys.emplace_back(t->key);
     }
     av_dict_free(&p);
-    TORCH_CHECK(
-        unused_keys.empty(),
-        "Unexpected options: ",
-        c10::Join(", ", unused_keys));
+    if (!unused_keys.empty()) {
+      std::ostringstream oss;
+      for (size_t i = 0; i < unused_keys.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << unused_keys[i];
+      }
+      TFMPEG_CHECK(false, "Unexpected options: ", oss.str());
+    }
   }
 }
 
@@ -76,7 +79,7 @@ AVPacketPtr::AVPacketPtr(AVPacket* p) : Wrapper<AVPacket, AVPacketDeleter>(p) {}
 
 AVPacketPtr alloc_avpacket() {
   AVPacket* p = av_packet_alloc();
-  TORCH_CHECK(p, "Failed to allocate AVPacket object.");
+  TFMPEG_CHECK(p, "Failed to allocate AVPacket object.");
   return AVPacketPtr{p};
 }
 
@@ -102,7 +105,7 @@ AVFramePtr::AVFramePtr(AVFrame* p) : Wrapper<AVFrame, AVFrameDeleter>(p) {}
 
 AVFramePtr alloc_avframe() {
   AVFrame* p = av_frame_alloc();
-  TORCH_CHECK(p, "Failed to allocate AVFrame object.");
+  TFMPEG_CHECK(p, "Failed to allocate AVFrame object.");
   return AVFramePtr{p};
 };
 

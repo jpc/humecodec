@@ -1,6 +1,7 @@
 #pragma once
 
 #include "torchffmpeg/csrc/ffmpeg.h"
+#include "torchffmpeg/csrc/managed_buffer.h"
 #include <iostream>
 
 namespace torchffmpeg {
@@ -47,7 +48,7 @@ struct OutputStreamInfo {
 
 /// Stores decoded frames and metadata
 struct Chunk {
-  torch::Tensor frames;
+  ManagedBuffer frames;
   double pts;
 };
 

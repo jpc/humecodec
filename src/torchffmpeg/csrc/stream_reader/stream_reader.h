@@ -94,7 +94,7 @@ class StreamingMediaDecoder {
       const std::string& filter_desc,
       const std::optional<std::string>& decoder,
       const std::optional<OptionDict>& decoder_option,
-      const torch::Device& device);
+      const DLDevice& device);
 
   //////////////////////////////////////////////////////////////////////////////
   // Stream methods

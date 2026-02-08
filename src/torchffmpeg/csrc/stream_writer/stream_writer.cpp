@@ -1,9 +1,5 @@
 #include "torchffmpeg/csrc/stream_writer/stream_writer.h"
 
-#ifdef USE_CUDA
-#include <c10/cuda/CUDAStream.h>
-#endif
-
 namespace torchffmpeg {
 namespace {
 
@@ -12,7 +8,7 @@ AVFormatContext* get_output_format_context(
     const std::optional<std::string>& format,
     AVIOContext* io_ctx) {
   if (io_ctx) {
-    TORCH_CHECK(
+    TFMPEG_CHECK(
         format,
         "`format` must be provided when the input is file-like object.");
   }
@@ -20,7 +16,7 @@ AVFormatContext* get_output_format_context(
   AVFormatContext* p = nullptr;
   int ret = avformat_alloc_output_context2(
       &p, nullptr, format ? format.value().c_str() : nullptr, dst.c_str());
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to open output \"",
       dst,
@@ -62,8 +58,8 @@ void StreamingMediaEncoder::add_audio_stream(
     const std::optional<int>& encoder_num_channels,
     const std::optional<CodecConfig>& codec_config,
     const std::optional<std::string>& filter_desc) {
-  TORCH_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
+  TFMPEG_INTERNAL_ASSERT(
       format_ctx->nb_streams == num_output_streams(),
       "The number of encode process and the number of output streams do not match.");
   processes.emplace(
@@ -98,8 +94,8 @@ void StreamingMediaEncoder::add_video_stream(
     const std::optional<std::string>& hw_accel,
     const std::optional<CodecConfig>& codec_config,
     const std::optional<std::string>& filter_desc) {
-  TORCH_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
+  TFMPEG_INTERNAL_ASSERT(
       format_ctx->nb_streams == num_output_streams(),
       "The number of encode process and the number of output streams do not match.");
   processes.emplace(
@@ -143,8 +139,8 @@ void StreamingMediaEncoder::add_audio_frame_stream(
     const std::optional<int>& encoder_num_channels,
     const std::optional<CodecConfig>& codec_config,
     const std::optional<std::string>& filter_desc) {
-  TORCH_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
+  TFMPEG_INTERNAL_ASSERT(
       format_ctx->nb_streams == num_output_streams(),
       "The number of encode process and the number of output streams do not match.");
   processes.emplace(
@@ -180,8 +176,8 @@ void StreamingMediaEncoder::add_video_frame_stream(
     const std::optional<std::string>& hw_accel,
     const std::optional<CodecConfig>& codec_config,
     const std::optional<std::string>& filter_desc) {
-  TORCH_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_CHECK(!is_open, "Output is already opened. Cannot add a new stream.");
+  TFMPEG_INTERNAL_ASSERT(
       format_ctx->nb_streams == num_output_streams(),
       "The number of encode process and the number of output streams do not match.");
   processes.emplace(
@@ -218,7 +214,7 @@ void StreamingMediaEncoder::dump_format(int64_t i) {
 }
 
 void StreamingMediaEncoder::open(const std::optional<OptionDict>& option) {
-  TORCH_INTERNAL_ASSERT(
+  TFMPEG_INTERNAL_ASSERT(
       format_ctx->nb_streams == num_output_streams(),
       "The number of encode process and the number of output streams do not match.");
 
@@ -232,7 +228,7 @@ void StreamingMediaEncoder::open(const std::optional<OptionDict>& option) {
         &format_ctx->pb, format_ctx->url, AVIO_FLAG_WRITE, nullptr, &opt);
     if (ret < 0) {
       av_dict_free(&opt);
-      TORCH_CHECK(
+      TFMPEG_CHECK(
           false,
           "Failed to open dst: ",
           format_ctx->url,
@@ -244,7 +240,7 @@ void StreamingMediaEncoder::open(const std::optional<OptionDict>& option) {
 
   ret = avformat_write_header(format_ctx, &opt);
   clean_up_dict(opt);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       ret >= 0,
       "Failed to write header: ",
       format_ctx->url,
@@ -257,7 +253,7 @@ void StreamingMediaEncoder::open(const std::optional<OptionDict>& option) {
 void StreamingMediaEncoder::close() {
   int ret = av_write_trailer(format_ctx);
   if (ret < 0) {
-    LOG(WARNING) << "Failed to write trailer. (" << av_err2string(ret) << ").";
+    TFMPEG_WARN("Failed to write trailer. (", av_err2string(ret), ").");
   }
 
   AVFORMAT_CONST AVOutputFormat* fmt = format_ctx->oformat;
@@ -270,16 +266,16 @@ void StreamingMediaEncoder::close() {
 
 void StreamingMediaEncoder::write_audio_chunk(
     int i,
-    const torch::Tensor& waveform,
+    const ManagedBuffer& waveform,
     const std::optional<double>& pts) {
-  TORCH_CHECK(is_open, "Output is not opened. Did you call `open` method?");
-  TORCH_CHECK(
+  TFMPEG_CHECK(is_open, "Output is not opened. Did you call `open` method?");
+  TFMPEG_CHECK(
       0 <= i && i < static_cast<int>(format_ctx->nb_streams),
       "Invalid stream index. Index must be in range of [0, ",
       format_ctx->nb_streams,
       "). Found: ",
       i);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO,
       "Stream ",
       i,
@@ -289,16 +285,16 @@ void StreamingMediaEncoder::write_audio_chunk(
 
 void StreamingMediaEncoder::write_video_chunk(
     int i,
-    const torch::Tensor& frames,
+    const ManagedBuffer& frames,
     const std::optional<double>& pts) {
-  TORCH_CHECK(is_open, "Output is not opened. Did you call `open` method?");
-  TORCH_CHECK(
+  TFMPEG_CHECK(is_open, "Output is not opened. Did you call `open` method?");
+  TFMPEG_CHECK(
       0 <= i && i < static_cast<int>(format_ctx->nb_streams),
       "Invalid stream index. Index must be in range of [0, ",
       format_ctx->nb_streams,
       "). Found: ",
       i);
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO,
       "Stream ",
       i,
@@ -307,9 +303,9 @@ void StreamingMediaEncoder::write_video_chunk(
 }
 
 void StreamingMediaEncoder::write_packet(const AVPacketPtr& packet) {
-  TORCH_CHECK(is_open, "Output is not opened. Did you call `open` method?");
+  TFMPEG_CHECK(is_open, "Output is not opened. Did you call `open` method?");
   int src_stream_index = packet->stream_index;
-  TORCH_CHECK(
+  TFMPEG_CHECK(
       packet_writers.count(src_stream_index),
       "Invalid packet stream source index ",
       src_stream_index);
@@ -317,8 +313,8 @@ void StreamingMediaEncoder::write_packet(const AVPacketPtr& packet) {
 }
 
 void StreamingMediaEncoder::write_frame(int i, AVFrame* frame) {
-  TORCH_CHECK(is_open, "Output is not opened. Did you call `open` method?");
-  TORCH_CHECK(
+  TFMPEG_CHECK(is_open, "Output is not opened. Did you call `open` method?");
+  TFMPEG_CHECK(
       0 <= i && i < static_cast<int>(format_ctx->nb_streams),
       "Invalid stream index. Index must be in range of [0, ",
       format_ctx->nb_streams,
@@ -328,7 +324,7 @@ void StreamingMediaEncoder::write_frame(int i, AVFrame* frame) {
 }
 
 void StreamingMediaEncoder::flush() {
-  TORCH_CHECK(is_open, "Output is not opened. Did you call `open` method?");
+  TFMPEG_CHECK(is_open, "Output is not opened. Did you call `open` method?");
   for (auto& p : processes) {
     p.second.flush();
   }
@@ -345,7 +341,6 @@ int StreamingMediaEncoder::num_output_streams() {
 namespace detail {
 namespace {
 #if LIBAVFORMAT_VERSION_MAJOR >= 61
-// FFmpeg 7+ uses const uint8_t* in write callback
 AVIOContext* get_io_context(
     void* opaque,
     int buffer_size,
@@ -359,12 +354,12 @@ AVIOContext* get_io_context(
     int64_t (*seek)(void* opaque, int64_t offset, int whence)) {
 #endif
   unsigned char* buffer = static_cast<unsigned char*>(av_malloc(buffer_size));
-  TORCH_CHECK(buffer, "Failed to allocate buffer.");
+  TFMPEG_CHECK(buffer, "Failed to allocate buffer.");
   AVIOContext* io_ctx = avio_alloc_context(
       buffer, buffer_size, 1, opaque, nullptr, write_packet, seek);
   if (!io_ctx) {
     av_freep(&buffer);
-    TORCH_CHECK(false, "Failed to allocate AVIOContext.");
+    TFMPEG_CHECK(false, "Failed to allocate AVIOContext.");
   }
   return io_ctx;
 }

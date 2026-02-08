@@ -3,9 +3,9 @@
 namespace torchffmpeg {
 
 void PacketBuffer::push_packet(AVPacket* packet) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(packet, "Packet is null.");
+  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(packet, "Packet is null.");
   AVPacket* p = av_packet_clone(packet);
-  TORCH_INTERNAL_ASSERT(p, "Failed to clone packet.");
+  TFMPEG_INTERNAL_ASSERT(p, "Failed to clone packet.");
   packets.emplace_back(p);
 }
 

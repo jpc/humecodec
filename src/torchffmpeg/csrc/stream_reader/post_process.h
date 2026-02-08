@@ -1,6 +1,7 @@
 #pragma once
 #include "torchffmpeg/csrc/filter_graph.h"
 #include "torchffmpeg/csrc/stream_reader/typedefs.h"
+#include "torchffmpeg/csrc/dlpack.h"
 
 namespace torchffmpeg {
 
@@ -29,6 +30,6 @@ std::unique_ptr<IPostDecodeProcess> get_video_process(
     const std::string& desc,
     int frames_per_chunk,
     int num_chunks,
-    const torch::Device& device);
+    const DLDevice& device);
 
 } // namespace torchffmpeg

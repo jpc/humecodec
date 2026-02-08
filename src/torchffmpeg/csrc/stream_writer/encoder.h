@@ -2,7 +2,6 @@
 
 #include "torchffmpeg/csrc/ffmpeg.h"
 #include "torchffmpeg/csrc/filter_graph.h"
-#include <torch/types.h>
 
 namespace torchffmpeg {
 

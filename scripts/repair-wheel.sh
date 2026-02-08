@@ -12,8 +12,6 @@ fi
 
 # First, run auditwheel repair with excludes
 auditwheel repair -w "$DEST_DIR" "$WHEEL" \
-    --exclude 'libtorch*' \
-    --exclude 'libc10*' \
     --exclude 'libcuda*' \
     --exclude 'libcublas*' \
     --exclude 'libcufft*' \

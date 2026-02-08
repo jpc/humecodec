@@ -4,7 +4,7 @@
 #include "torchffmpeg/csrc/stream_writer/encoder.h"
 #include "torchffmpeg/csrc/stream_writer/tensor_converter.h"
 #include "torchffmpeg/csrc/stream_writer/types.h"
-#include <torch/types.h>
+#include "torchffmpeg/csrc/managed_buffer.h"
 
 namespace torchffmpeg {
 
@@ -26,7 +26,7 @@ class EncodeProcess {
 
   EncodeProcess(EncodeProcess&&) noexcept = default;
 
-  void process(const torch::Tensor& tensor, const std::optional<double>& pts);
+  void process(const ManagedBuffer& buf, const std::optional<double>& pts);
 
   void process_frame(AVFrame* src);
 

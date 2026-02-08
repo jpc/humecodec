@@ -1,4 +1,6 @@
 #include "torchffmpeg/csrc/hw_context.h"
+#include <cassert>
+#include <mutex>
 
 namespace torchffmpeg {
 namespace {
@@ -17,7 +19,7 @@ AVBufferRef* get_cuda_context(int index) {
     AVBufferRef* p = nullptr;
     int ret = av_hwdevice_ctx_create(
         &p, AV_HWDEVICE_TYPE_CUDA, std::to_string(index).c_str(), nullptr, 0);
-    TORCH_CHECK(
+    TFMPEG_CHECK(
         ret >= 0,
         "Failed to create CUDA device context on device ",
         index,
