@@ -78,54 +78,46 @@ ImageConverterBase::ImageConverterBase(int h, int w, int c)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Interlaced Image -> NCHW uint8
+// Interlaced Image -> NHWC uint8 (Python permutes to NCHW)
 ////////////////////////////////////////////////////////////////////////////////
 ManagedBuffer InterlacedImageConverter::convert(const AVFrame* src) {
   TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(src);
   TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(src->height == height);
 
-  // Allocate directly in NCHW layout {1, C, H, W}
-  ManagedBuffer buffer({1, (int64_t)num_channels, (int64_t)height, (int64_t)width},
+  // Output NHWC layout {1, H, W, C} — row-by-row memcpy from AVFrame
+  ManagedBuffer buffer({1, (int64_t)height, (int64_t)width, (int64_t)num_channels},
                        dtype::uint8(), device::cpu());
   uint8_t* p_dst = buffer.data_ptr<uint8_t>();
   uint8_t* p_src = src->data[0];
 
-  // Source is NHWC (interleaved), dest is NCHW
-  // Copy with stride-aware de-interleaving
+  size_t row_bytes = width * num_channels;
   for (int h = 0; h < height; ++h) {
-    for (int w = 0; w < width; ++w) {
-      for (int c = 0; c < num_channels; ++c) {
-        p_dst[c * height * width + h * width + w] =
-            p_src[h * src->linesize[0] + w * num_channels + c];
-      }
-    }
+    memcpy(p_dst + h * row_bytes, p_src + h * src->linesize[0], row_bytes);
   }
   return buffer;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Interlaced 16 Bit Image -> NCHW int16
+// Interlaced 16 Bit Image -> NHWC int16 (Python permutes to NCHW)
 ////////////////////////////////////////////////////////////////////////////////
 ManagedBuffer Interlaced16BitImageConverter::convert(const AVFrame* src) {
   TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(src);
   TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(src->height == height);
 
-  // Allocate in NCHW layout {1, C, H, W} as int16
-  ManagedBuffer buffer({1, (int64_t)num_channels, (int64_t)height, (int64_t)width},
+  // Output NHWC layout {1, H, W, C} as int16
+  ManagedBuffer buffer({1, (int64_t)height, (int64_t)width, (int64_t)num_channels},
                        dtype::int16(), device::cpu());
   int16_t* p_dst = buffer.data_ptr<int16_t>();
   uint8_t* p_src_base = src->data[0];
 
-  // Source is NHWC interleaved int16, dest is NCHW
+  // Copy row-by-row, applying +32768 offset per element
+  int row_elems = width * num_channels;
   for (int h = 0; h < height; ++h) {
     const int16_t* p_src_row =
         reinterpret_cast<const int16_t*>(p_src_base + h * src->linesize[0]);
-    for (int w = 0; w < width; ++w) {
-      for (int c = 0; c < num_channels; ++c) {
-        // Add 32768 offset during copy (same as original dst += 32768)
-        p_dst[c * height * width + h * width + w] =
-            p_src_row[w * num_channels + c] + 32768;
-      }
+    int16_t* p_dst_row = p_dst + h * row_elems;
+    for (int i = 0; i < row_elems; ++i) {
+      p_dst_row[i] = p_src_row[i] + 32768;
     }
   }
   return buffer;

@@ -13,140 +13,16 @@ using InitFunc = TensorConverter::InitFunc;
 using ConvertFunc = TensorConverter::ConvertFunc;
 
 ////////////////////////////////////////////////////////////////////////////////
-// Helper: DLDataType comparison
+// Helper: make a contiguous copy of a ManagedBuffer
 ////////////////////////////////////////////////////////////////////////////////
 
-inline bool dtype_eq(DLDataType a, DLDataType b) {
-  return a.code == b.code && a.bits == b.bits && a.lanes == b.lanes;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Helper: make a contiguous copy of a ManagedBuffer if it isn't already
-////////////////////////////////////////////////////////////////////////////////
-
-ManagedBuffer ensure_contiguous(const ManagedBuffer& buf) {
-  // Check if already contiguous (row-major)
-  int64_t expected = 1;
-  bool contiguous = true;
-  for (int i = buf.ndim() - 1; i >= 0; --i) {
-    if (buf.shape()[i] != 1 && buf.strides()[i] != expected) {
-      contiguous = false;
-      break;
-    }
-    expected *= buf.shape()[i];
-  }
-  if (contiguous) {
-    // We need to return a new buffer that owns a copy since ManagedBuffer
-    // is move-only. For the contiguous case we do a full copy.
-    ManagedBuffer out(buf.shape(), buf.dtype(), buf.device());
-    if (buf.is_cpu()) {
-      std::memcpy(out.data(), buf.data(), buf.nbytes());
-    } else {
-#ifdef USE_CUDA
-      cudaMemcpy(out.data(), buf.data(), buf.nbytes(), cudaMemcpyDeviceToDevice);
-#endif
-    }
-    return out;
-  }
-
-  // Non-contiguous: copy element-by-element with stride awareness
+ManagedBuffer copy_buffer(const ManagedBuffer& buf) {
   ManagedBuffer out(buf.shape(), buf.dtype(), buf.device());
-  size_t elem_sz = buf.element_size();
-
   if (buf.is_cpu()) {
-    // Generic strided copy for CPU
-    int64_t total = buf.numel();
-    const auto& sh = buf.shape();
-    const auto& st = buf.strides();
-    int nd = buf.ndim();
-    std::vector<int64_t> idx(nd, 0);
-
-    const uint8_t* src_base = static_cast<const uint8_t*>(buf.data());
-    uint8_t* dst = static_cast<uint8_t*>(out.data());
-
-    for (int64_t flat = 0; flat < total; ++flat) {
-      // Compute source offset from strides
-      int64_t src_offset = 0;
-      for (int d = 0; d < nd; ++d) {
-        src_offset += idx[d] * st[d];
-      }
-      std::memcpy(dst + flat * elem_sz, src_base + src_offset * elem_sz, elem_sz);
-
-      // Increment multi-index
-      for (int d = nd - 1; d >= 0; --d) {
-        if (++idx[d] < sh[d]) break;
-        idx[d] = 0;
-      }
-    }
+    std::memcpy(out.data(), buf.data(), buf.nbytes());
   } else {
 #ifdef USE_CUDA
-    // For CUDA non-contiguous, this is a rare path. Fall back to device copy
-    // assuming the buffer was already made contiguous by the caller.
     cudaMemcpy(out.data(), buf.data(), buf.nbytes(), cudaMemcpyDeviceToDevice);
-#endif
-  }
-  return out;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Helper: NCHW to NHWC permutation (returns a new contiguous ManagedBuffer)
-////////////////////////////////////////////////////////////////////////////////
-
-ManagedBuffer nchw_to_nhwc(const ManagedBuffer& buf) {
-  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(buf.ndim() == 4);
-  int64_t N = buf.size(0);
-  int64_t C = buf.size(1);
-  int64_t H = buf.size(2);
-  int64_t W = buf.size(3);
-  size_t elem_sz = buf.element_size();
-
-  ManagedBuffer out({N, H, W, C}, buf.dtype(), buf.device());
-
-  if (buf.is_cpu()) {
-    const uint8_t* src = static_cast<const uint8_t*>(buf.data());
-    uint8_t* dst = static_cast<uint8_t*>(out.data());
-
-    // Source strides in elements (assuming contiguous NCHW)
-    int64_t src_n_stride = C * H * W;
-    int64_t src_c_stride = H * W;
-    int64_t src_h_stride = W;
-
-    for (int64_t n = 0; n < N; ++n) {
-      for (int64_t h = 0; h < H; ++h) {
-        for (int64_t w = 0; w < W; ++w) {
-          for (int64_t c = 0; c < C; ++c) {
-            int64_t src_idx = n * src_n_stride + c * src_c_stride + h * src_h_stride + w;
-            int64_t dst_idx = n * (H * W * C) + h * (W * C) + w * C + c;
-            std::memcpy(dst + dst_idx * elem_sz, src + src_idx * elem_sz, elem_sz);
-          }
-        }
-      }
-    }
-  } else {
-#ifdef USE_CUDA
-    // For CUDA: allocate a temp host buffer, do the permute on host, copy back.
-    // This is the encoder path and typically not performance-critical.
-    size_t total_bytes = buf.nbytes();
-    std::vector<uint8_t> host_src(total_bytes);
-    std::vector<uint8_t> host_dst(total_bytes);
-    cudaMemcpy(host_src.data(), buf.data(), total_bytes, cudaMemcpyDeviceToHost);
-
-    int64_t src_n_stride = C * H * W;
-    int64_t src_c_stride = H * W;
-    int64_t src_h_stride = W;
-
-    for (int64_t n = 0; n < N; ++n) {
-      for (int64_t h = 0; h < H; ++h) {
-        for (int64_t w = 0; w < W; ++w) {
-          for (int64_t c = 0; c < C; ++c) {
-            int64_t src_idx = n * src_n_stride + c * src_c_stride + h * src_h_stride + w;
-            int64_t dst_idx = n * (H * W * C) + h * (W * C) + w * C + c;
-            std::memcpy(host_dst.data() + dst_idx * elem_sz, host_src.data() + src_idx * elem_sz, elem_sz);
-          }
-        }
-      }
-    }
-    cudaMemcpy(out.data(), host_dst.data(), total_bytes, cudaMemcpyHostToDevice);
 #endif
   }
   return out;
@@ -196,24 +72,6 @@ inline int get_frame_channels(const AVFrame* frame) {
 #endif
 }
 
-void validate_audio_input(
-    const ManagedBuffer& t,
-    AVFrame* buffer,
-    DLDataType expected_dtype) {
-  int num_channels = get_frame_channels(buffer);
-  TFMPEG_CHECK(
-      dtype_eq(t.dtype(), expected_dtype),
-      "Expected matching dtype for audio encoding.");
-  TFMPEG_CHECK(t.is_cpu(), "Input buffer has to be on CPU.");
-  TFMPEG_CHECK(t.ndim() == 2, "Input buffer has to be 2D.");
-  TFMPEG_CHECK(
-      t.size(1) == num_channels,
-      "Expected waveform with ",
-      num_channels,
-      " channels. Found ",
-      t.size(1));
-}
-
 // 2D (time, channel) and contiguous.
 void convert_func_(const ManagedBuffer& chunk, AVFrame* buffer) {
   TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(chunk.ndim() == 2);
@@ -230,30 +88,10 @@ void convert_func_(const ManagedBuffer& chunk, AVFrame* buffer) {
   buffer->nb_samples = static_cast<int>(chunk.size(0));
 }
 
-std::pair<InitFunc, ConvertFunc> get_audio_func(AVFrame* buffer) {
-  auto expected_dtype = [&]() -> DLDataType {
-    switch (static_cast<AVSampleFormat>(buffer->format)) {
-      case AV_SAMPLE_FMT_U8:
-        return dtype::uint8();
-      case AV_SAMPLE_FMT_S16:
-        return dtype::int16();
-      case AV_SAMPLE_FMT_S32:
-        return dtype::int32();
-      case AV_SAMPLE_FMT_S64:
-        return dtype::int64();
-      case AV_SAMPLE_FMT_FLT:
-        return dtype::float32();
-      case AV_SAMPLE_FMT_DBL:
-        return dtype::float64();
-      default:
-        TFMPEG_INTERNAL_ASSERT(
-            false, "Audio encoding process is not properly configured.");
-    }
-  }();
-
-  InitFunc init_func = [=](const ManagedBuffer& buf, AVFrame* buffer) {
-    validate_audio_input(buf, buffer, expected_dtype);
-    return ensure_contiguous(buf);
+std::pair<InitFunc, ConvertFunc> get_audio_func(AVFrame*) {
+  // Python has already validated and made the tensor contiguous.
+  InitFunc init_func = [](const ManagedBuffer& buf, AVFrame*) {
+    return copy_buffer(buf);
   };
   return {init_func, convert_func_};
 }
@@ -262,137 +100,7 @@ std::pair<InitFunc, ConvertFunc> get_audio_func(AVFrame* buffer) {
 // Video
 ////////////////////////////////////////////////////////////////////////////////
 
-void validate_video_input(
-    const ManagedBuffer& t,
-    AVFrame* buffer,
-    int num_channels) {
-  if (buffer->hw_frames_ctx) {
-    TFMPEG_CHECK(t.is_cuda(), "Input buffer has to be on CUDA.");
-  } else {
-    TFMPEG_CHECK(t.is_cpu(), "Input buffer has to be on CPU.");
-  }
-  TFMPEG_CHECK(
-      dtype_eq(t.dtype(), dtype::uint8()),
-      "Expected buffer of uint8 type.");
-
-  TFMPEG_CHECK(t.ndim() == 4, "Input buffer has to be 4D.");
-  TFMPEG_CHECK(
-      t.size(1) == num_channels && t.size(2) == buffer->height &&
-          t.size(3) == buffer->width,
-      "Expected buffer with shape (N, ",
-      num_channels,
-      ", ",
-      buffer->height,
-      ", ",
-      buffer->width,
-      ") (NCHW format).");
-}
-
-// Special case where encode pixel format is RGB0/BGR0 but the tensor is RGB/BGR
-void validate_rgb0(const ManagedBuffer& t, AVFrame* buffer) {
-  if (buffer->hw_frames_ctx) {
-    TFMPEG_CHECK(t.is_cuda(), "Input buffer has to be on CUDA.");
-  } else {
-    TFMPEG_CHECK(t.is_cpu(), "Input buffer has to be on CPU.");
-  }
-  TFMPEG_CHECK(
-      dtype_eq(t.dtype(), dtype::uint8()),
-      "Expected buffer of uint8 type.");
-
-  TFMPEG_CHECK(t.ndim() == 4, "Input buffer has to be 4D.");
-  TFMPEG_CHECK(
-      t.size(2) == buffer->height && t.size(3) == buffer->width,
-      "Expected buffer with shape (N, 3, ",
-      buffer->height,
-      ", ",
-      buffer->width,
-      ") (NCHW format).");
-}
-
-// NCHW -> NHWC, ensure contiguous
-ManagedBuffer init_interlaced(const ManagedBuffer& buf) {
-  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(buf.ndim() == 4);
-  auto contiguous = ensure_contiguous(buf);
-  return nchw_to_nhwc(contiguous);
-}
-
-// Keep NCHW, ensure contiguous
-ManagedBuffer init_planar(const ManagedBuffer& buf) {
-  return ensure_contiguous(buf);
-}
-
-// Convert RGB (3-channel NCHW) to RGB0/BGR0 (4-channel NHWC) by padding
-ManagedBuffer rgb_to_rgb0_nhwc(const ManagedBuffer& buf) {
-  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(buf.ndim() == 4);
-  TFMPEG_INTERNAL_ASSERT_DEBUG_ONLY(buf.size(1) == 3);
-
-  int64_t N = buf.size(0);
-  int64_t H = buf.size(2);
-  int64_t W = buf.size(3);
-
-  // Ensure input is contiguous first
-  auto src = ensure_contiguous(buf);
-
-  // Allocate NHWC with 4 channels
-  ManagedBuffer out({N, H, W, 4}, dtype::uint8(), buf.device());
-
-  if (buf.is_cpu()) {
-    const uint8_t* sp = src.data_ptr<uint8_t>();
-    uint8_t* dp = out.data_ptr<uint8_t>();
-
-    // Zero the output (sets alpha/padding channel to 0)
-    std::memset(dp, 0, out.nbytes());
-
-    // Source is NCHW: [N, 3, H, W]
-    int64_t chw = 3 * H * W;
-    int64_t hw = H * W;
-
-    for (int64_t n = 0; n < N; ++n) {
-      const uint8_t* src_n = sp + n * chw;
-      uint8_t* dst_n = dp + n * H * W * 4;
-      for (int64_t h = 0; h < H; ++h) {
-        for (int64_t w = 0; w < W; ++w) {
-          int64_t pixel_idx = h * W + w;
-          uint8_t* dst_pixel = dst_n + pixel_idx * 4;
-          dst_pixel[0] = src_n[0 * hw + pixel_idx]; // R or B
-          dst_pixel[1] = src_n[1 * hw + pixel_idx]; // G
-          dst_pixel[2] = src_n[2 * hw + pixel_idx]; // B or R
-          // dst_pixel[3] remains 0 (padding)
-        }
-      }
-    }
-  } else {
-#ifdef USE_CUDA
-    // Host-staged approach for CUDA
-    size_t src_bytes = src.nbytes();
-    size_t dst_bytes = out.nbytes();
-    std::vector<uint8_t> host_src(src_bytes);
-    std::vector<uint8_t> host_dst(dst_bytes, 0);
-    cudaMemcpy(host_src.data(), src.data(), src_bytes, cudaMemcpyDeviceToHost);
-
-    int64_t chw = 3 * H * W;
-    int64_t hw = H * W;
-
-    for (int64_t n = 0; n < N; ++n) {
-      const uint8_t* src_n = host_src.data() + n * chw;
-      uint8_t* dst_n = host_dst.data() + n * H * W * 4;
-      for (int64_t h = 0; h < H; ++h) {
-        for (int64_t w = 0; w < W; ++w) {
-          int64_t pixel_idx = h * W + w;
-          uint8_t* dst_pixel = dst_n + pixel_idx * 4;
-          dst_pixel[0] = src_n[0 * hw + pixel_idx];
-          dst_pixel[1] = src_n[1 * hw + pixel_idx];
-          dst_pixel[2] = src_n[2 * hw + pixel_idx];
-        }
-      }
-    }
-    cudaMemcpy(out.data(), host_dst.data(), dst_bytes, cudaMemcpyHostToDevice);
-#endif
-  }
-  return out;
-}
-
-// Interlaced video write (NHWC buffer → AVFrame)
+// Interlaced video write (NHWC buffer -> AVFrame)
 void write_interlaced_video(
     const ManagedBuffer& frame,
     AVFrame* buffer,
@@ -419,7 +127,7 @@ void write_interlaced_video(
   }
 }
 
-// Planar video write (NCHW buffer → AVFrame)
+// Planar video write (NCHW buffer -> AVFrame)
 void write_planar_video(
     const ManagedBuffer& frame,
     AVFrame* buffer,
@@ -515,7 +223,13 @@ void write_planar_video_cuda(
 #endif
 }
 
+// Python has already transformed the tensor to the correct layout.
+// InitFunc just copies the buffer for ownership.
 std::pair<InitFunc, ConvertFunc> get_video_func(AVFrame* buffer) {
+  InitFunc init_func = [](const ManagedBuffer& t, AVFrame*) -> ManagedBuffer {
+    return copy_buffer(t);
+  };
+
   if (buffer->hw_frames_ctx) {
     auto frames_ctx = (AVHWFramesContext*)(buffer->hw_frames_ctx->data);
     auto sw_pix_fmt = frames_ctx->sw_format;
@@ -525,14 +239,6 @@ std::pair<InitFunc, ConvertFunc> get_video_func(AVFrame* buffer) {
         ConvertFunc convert_func = [](const ManagedBuffer& t, AVFrame* f) {
           write_interlaced_video_cuda(t, f, 4);
         };
-        InitFunc init_func = [](const ManagedBuffer& t, AVFrame* f) -> ManagedBuffer {
-          if (t.ndim() == 4 && t.size(1) == 3) {
-            validate_rgb0(t, f);
-            return rgb_to_rgb0_nhwc(t);
-          }
-          validate_video_input(t, f, 4);
-          return init_interlaced(t);
-        };
         return {init_func, convert_func};
       }
       case AV_PIX_FMT_GBRP:
@@ -541,10 +247,6 @@ std::pair<InitFunc, ConvertFunc> get_video_func(AVFrame* buffer) {
       case AV_PIX_FMT_YUV444P16LE: {
         ConvertFunc convert_func = [](const ManagedBuffer& t, AVFrame* f) {
           write_planar_video_cuda(t, f, 3);
-        };
-        InitFunc init_func = [](const ManagedBuffer& t, AVFrame* f) -> ManagedBuffer {
-          validate_video_input(t, f, 3);
-          return init_planar(t);
         };
         return {init_func, convert_func};
       }
@@ -562,10 +264,6 @@ std::pair<InitFunc, ConvertFunc> get_video_func(AVFrame* buffer) {
     case AV_PIX_FMT_RGB24:
     case AV_PIX_FMT_BGR24: {
       int channels = av_pix_fmt_desc_get(pix_fmt)->nb_components;
-      InitFunc init_func = [=](const ManagedBuffer& t, AVFrame* f) -> ManagedBuffer {
-        validate_video_input(t, f, channels);
-        return init_interlaced(t);
-      };
       ConvertFunc convert_func = [=](const ManagedBuffer& t, AVFrame* f) {
         write_interlaced_video(t, f, channels);
       };
@@ -573,24 +271,12 @@ std::pair<InitFunc, ConvertFunc> get_video_func(AVFrame* buffer) {
     }
     case AV_PIX_FMT_RGB0:
     case AV_PIX_FMT_BGR0: {
-      InitFunc init_func = [](const ManagedBuffer& t, AVFrame* f) -> ManagedBuffer {
-        if (t.ndim() == 4 && t.size(1) == 3) {
-          validate_rgb0(t, f);
-          return rgb_to_rgb0_nhwc(t);
-        }
-        validate_video_input(t, f, 4);
-        return init_interlaced(t);
-      };
       ConvertFunc convert_func = [](const ManagedBuffer& t, AVFrame* f) {
         write_interlaced_video(t, f, 4);
       };
       return {init_func, convert_func};
     }
     case AV_PIX_FMT_YUV444P: {
-      InitFunc init_func = [](const ManagedBuffer& t, AVFrame* f) -> ManagedBuffer {
-        validate_video_input(t, f, 3);
-        return init_planar(t);
-      };
       ConvertFunc convert_func = [](const ManagedBuffer& t, AVFrame* f) {
         write_planar_video(t, f, 3);
       };

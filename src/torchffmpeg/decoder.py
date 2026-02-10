@@ -192,6 +192,12 @@ def _get_vfilter_desc(frame_rate, width, height, fmt):
     return ",".join(descs) if descs else None
 
 
+# Interlaced pixel formats that C++ outputs as NHWC (need permute to NCHW)
+_NHWC_VIDEO_FORMATS = {
+    "rgb24", "bgr24", "argb", "rgba", "abgr", "bgra", "gray8", "rgb48le",
+}
+
+
 class ChunkTensorBase(torch.Tensor):
     __torch_function__ = torch._C._disabled_torch_function_impl
 
@@ -258,6 +264,7 @@ class MediaDecoder:
         self._default_audio_stream = None if i < 0 else i
         i = self._be.find_best_video_stream()
         self._default_video_stream = None if i < 0 else i
+        self._out_transforms: Optional[list] = None
 
     @property
     def num_src_streams(self):
@@ -411,6 +418,7 @@ class MediaDecoder:
         i = self.default_audio_stream if stream_index is None else stream_index
         if i is None:
             raise RuntimeError("There is no audio stream.")
+        self._out_transforms = None
         self._be.add_audio_stream(
             i,
             frames_per_chunk,
@@ -445,6 +453,7 @@ class MediaDecoder:
         i = self.default_video_stream if stream_index is None else stream_index
         if i is None:
             raise RuntimeError("There is no video stream.")
+        self._out_transforms = None
         self._be.add_video_stream(
             i,
             frames_per_chunk,
@@ -457,6 +466,7 @@ class MediaDecoder:
 
     def remove_stream(self, i: int):
         """Remove an output stream."""
+        self._out_transforms = None
         self._be.remove_stream(i)
 
     def process_packet(self, timeout: Optional[float] = None, backoff: float = 10.0) -> int:
@@ -475,22 +485,36 @@ class MediaDecoder:
         """Returns true if all output streams have at least one chunk filled."""
         return self._be.is_buffer_ready()
 
+    def _ensure_transforms(self):
+        """Build per-output-stream transform list lazily."""
+        n = self._be.num_out_streams()
+        if self._out_transforms is not None and len(self._out_transforms) == n:
+            return
+        transforms = []
+        for idx in range(n):
+            info = self._be.get_out_stream_info(idx)
+            if info.media_type == "video" and info.format in _NHWC_VIDEO_FORMATS:
+                transforms.append("nhwc_to_nchw")
+            else:
+                transforms.append(None)
+        self._out_transforms = transforms
+
     def pop_chunks(self) -> Tuple[Optional[Chunk]]:
         """Pop one chunk from all the output stream buffers.
 
         Returns decoded frames as Chunk objects, which wrap torch.Tensor instances.
         The tensors are transferred via DLPack protocol for efficient zero-copy exchange.
         """
+        self._ensure_transforms()
         ret = []
-        # Use DLPack-based pop_chunks for efficient tensor transfer
-        for item in self._be.pop_chunks_dlpack():
+        for idx, item in enumerate(self._be.pop_chunks_dlpack()):
             if item is None:
                 ret.append(None)
             else:
-                # item is a tuple (capsule, pts) for DLPack transfer
                 capsule, pts = item
-                # Convert DLPack capsule to torch.Tensor
                 tensor = torch.from_dlpack(capsule)
+                if self._out_transforms[idx] == "nhwc_to_nchw":
+                    tensor = tensor.permute(0, 3, 1, 2).contiguous()
                 ret.append(Chunk(tensor, pts))
         return ret
 

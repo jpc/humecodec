@@ -42,6 +42,37 @@ def _convert_config(cfg: Optional[CodecConfig]):
     )
 
 
+_INTERLACED_FORMATS = {"rgb24", "bgr24", "gray8"}
+_INTERLACED_4CH_FORMATS = {"rgb0", "bgr0"}
+_PLANAR_FORMATS = {"yuv444p", "gbrp"}
+
+
+def _prepare_video_tensor(chunk: torch.Tensor, fmt: str) -> torch.Tensor:
+    """Prepare a video tensor for encoding by converting to the layout C++ expects.
+
+    C++ expects:
+    - Interlaced formats: NHWC contiguous
+    - Planar formats: NCHW contiguous
+    """
+    if fmt in _INTERLACED_FORMATS:
+        # NCHW -> NHWC
+        return chunk.permute(0, 2, 3, 1).contiguous()
+    if fmt in _INTERLACED_4CH_FORMATS:
+        if chunk.size(1) == 3:
+            # Pad 3-channel NCHW to 4-channel NHWC (padding channel = 0)
+            padding = torch.zeros(
+                chunk.size(0), 1, chunk.size(2), chunk.size(3),
+                dtype=chunk.dtype, device=chunk.device,
+            )
+            chunk = torch.cat([chunk, padding], dim=1)
+        # NCHW -> NHWC (now 4 channels)
+        return chunk.permute(0, 2, 3, 1).contiguous()
+    if fmt in _PLANAR_FORMATS:
+        return chunk.contiguous()
+    # Unknown format — pass through contiguous, let C++ handle it
+    return chunk.contiguous()
+
+
 class MediaEncoder:
     """Encode and write audio/video streams chunk by chunk.
 
@@ -66,6 +97,7 @@ class MediaEncoder:
         else:
             self._s = ext.StreamingMediaEncoder(str(dst), format)
         self._is_open = False
+        self._stream_configs: list = []
 
     def add_audio_stream(
         self,
@@ -95,6 +127,7 @@ class MediaEncoder:
             codec_config (CodecConfig or None, optional): Codec configuration.
             filter_desc (str or None, optional): Additional filter processing.
         """
+        self._stream_configs.append(("audio", format))
         self._s.add_audio_stream(
             sample_rate,
             num_channels,
@@ -142,6 +175,7 @@ class MediaEncoder:
             filter_desc (str or None, optional): Additional filter processing.
             hw_accel (str or None, optional): Enable hardware acceleration.
         """
+        self._stream_configs.append(("video", format))
         self._s.add_video_stream(
             frame_rate,
             width,
@@ -189,7 +223,7 @@ class MediaEncoder:
         Note:
             The tensor is transferred via DLPack protocol for efficient zero-copy exchange.
         """
-        # Use DLPack-based method for efficient tensor transfer
+        chunk = chunk.contiguous()
         capsule = chunk.__dlpack__()
         self._s.write_audio_chunk_dlpack(i, capsule, pts)
 
@@ -204,7 +238,8 @@ class MediaEncoder:
         Note:
             The tensor is transferred via DLPack protocol for efficient zero-copy exchange.
         """
-        # Use DLPack-based method for efficient tensor transfer
+        _, fmt = self._stream_configs[i]
+        chunk = _prepare_video_tensor(chunk, fmt)
         capsule = chunk.__dlpack__()
         self._s.write_video_chunk_dlpack(i, capsule, pts)
 
