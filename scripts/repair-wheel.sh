@@ -30,7 +30,7 @@ echo "Repaired wheel: $REPAIRED_WHEEL"
 TEMP_DIR=$(mktemp -d)
 unzip -q "$REPAIRED_WHEEL" -d "$TEMP_DIR"
 
-# Find the .libs directory (e.g., torchffmpeg.libs)
+# Find the .libs directory (e.g., humecodec.libs)
 LIBS_DIR=$(find "$TEMP_DIR" -name "*.libs" -type d | head -1)
 if [ -n "$LIBS_DIR" ]; then
     echo "Patching RPATHs in: $LIBS_DIR"

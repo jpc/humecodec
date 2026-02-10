@@ -1,11 +1,11 @@
-# torchffmpeg
+# humecodec
 
 FFmpeg integration for PyTorch with bundled libraries. Load and save audio/video files directly to PyTorch tensors without requiring a system FFmpeg installation.
 
 ## Installation
 
 ```bash
-pip install torchffmpeg
+pip install humecodec
 ```
 
 The package includes bundled FFmpeg libraries, so no separate FFmpeg installation is required.
@@ -15,28 +15,28 @@ The package includes bundled FFmpeg libraries, so no separate FFmpeg installatio
 ### Load Audio
 
 ```python
-import torchffmpeg
+import humecodec
 
 # Load an audio file (returns tensor and sample rate)
-waveform, sample_rate = torchffmpeg.load_audio("audio.mp3")
+waveform, sample_rate = humecodec.load_audio("audio.mp3")
 print(f"Shape: {waveform.shape}")  # (num_frames, num_channels)
 print(f"Sample rate: {sample_rate}")
 
 # Load with resampling
-waveform, sr = torchffmpeg.load_audio("audio.mp3", sample_rate=16000)
+waveform, sr = humecodec.load_audio("audio.mp3", sample_rate=16000)
 
 # Load a specific duration starting from an offset
-waveform, sr = torchffmpeg.load_audio("audio.mp3", offset=1.0, duration=5.0)
+waveform, sr = humecodec.load_audio("audio.mp3", offset=1.0, duration=5.0)
 
 # Load as mono
-waveform, sr = torchffmpeg.load_audio("audio.mp3", num_channels=1)
+waveform, sr = humecodec.load_audio("audio.mp3", num_channels=1)
 ```
 
 ### Save Audio
 
 ```python
 import torch
-import torchffmpeg
+import humecodec
 
 # Create a simple sine wave
 sample_rate = 44100
@@ -45,13 +45,13 @@ t = torch.linspace(0, duration, int(sample_rate * duration))
 waveform = 0.5 * torch.sin(2 * torch.pi * 440 * t).unsqueeze(1)  # 440 Hz tone
 
 # Save as WAV
-torchffmpeg.save_audio("output.wav", waveform, sample_rate)
+humecodec.save_audio("output.wav", waveform, sample_rate)
 
 # Save as MP3
-torchffmpeg.save_audio("output.mp3", waveform, sample_rate)
+humecodec.save_audio("output.mp3", waveform, sample_rate)
 
 # Save as FLAC with custom encoder options
-torchffmpeg.save_audio(
+humecodec.save_audio(
     "output.flac",
     waveform,
     sample_rate,
@@ -62,9 +62,9 @@ torchffmpeg.save_audio(
 ### Get Audio Info
 
 ```python
-import torchffmpeg
+import humecodec
 
-info = torchffmpeg.info("audio.mp3")
+info = humecodec.info("audio.mp3")
 print(f"Sample rate: {info.sample_rate}")
 print(f"Channels: {info.num_channels}")
 print(f"Duration: {info.num_frames / info.sample_rate:.2f}s")
@@ -78,7 +78,7 @@ print(f"Codec: {info.codec}")
 For large files or real-time processing, use the streaming API:
 
 ```python
-from torchffmpeg import MediaDecoder
+from humecodec import MediaDecoder
 
 decoder = MediaDecoder("long_audio.wav")
 decoder.add_audio_stream(
@@ -96,7 +96,7 @@ for (chunk,) in decoder.stream():
 ### Streaming Encode
 
 ```python
-from torchffmpeg import MediaEncoder
+from humecodec import MediaEncoder
 import torch
 
 encoder = MediaEncoder("output.wav")
@@ -115,7 +115,7 @@ with encoder.open():
 ### Video Support
 
 ```python
-from torchffmpeg import MediaDecoder, MediaEncoder
+from humecodec import MediaDecoder, MediaEncoder
 
 # Decode video
 decoder = MediaDecoder("video.mp4")
@@ -151,7 +151,7 @@ with encoder.open():
 Apply FFmpeg filters during decode:
 
 ```python
-from torchffmpeg import MediaDecoder
+from humecodec import MediaDecoder
 
 decoder = MediaDecoder("audio.wav")
 
@@ -170,7 +170,7 @@ waveform = chunks[0]  # Resampled mono audio
 ### Seeking
 
 ```python
-from torchffmpeg import MediaDecoder
+from humecodec import MediaDecoder
 
 decoder = MediaDecoder("audio.mp3")
 decoder.add_audio_stream(frames_per_chunk=44100)
@@ -204,20 +204,20 @@ for (chunk,) in decoder.stream():
 ### Query Functions
 
 ```python
-import torchffmpeg
+import humecodec
 
 # List available codecs
-torchffmpeg.get_audio_decoders()  # {'mp3': 'MP3 ...', 'aac': 'AAC ...', ...}
-torchffmpeg.get_audio_encoders()
-torchffmpeg.get_video_decoders()
-torchffmpeg.get_video_encoders()
+humecodec.get_audio_decoders()  # {'mp3': 'MP3 ...', 'aac': 'AAC ...', ...}
+humecodec.get_audio_encoders()
+humecodec.get_video_decoders()
+humecodec.get_video_encoders()
 
 # List available formats
-torchffmpeg.get_demuxers()  # Input formats
-torchffmpeg.get_muxers()    # Output formats
+humecodec.get_demuxers()  # Input formats
+humecodec.get_muxers()    # Output formats
 
 # Get FFmpeg library versions
-torchffmpeg.get_versions()
+humecodec.get_versions()
 # {'libavcodec': (62, 11, 100), 'libavformat': (62, 3, 100), ...}
 ```
 
@@ -248,14 +248,14 @@ The bundled FFmpeg includes support for common formats:
 For development or custom FFmpeg builds:
 
 ```bash
-git clone https://github.com/your-org/torchffmpeg
-cd torchffmpeg
+git clone https://github.com/your-org/humecodec
+cd humecodec
 
 # Install with system FFmpeg
 pip install -e .
 
 # Or with custom FFmpeg location
-TORCHFFMPEG_FFMPEG_ROOT=/path/to/ffmpeg pip install -e .
+HUMECODEC_FFMPEG_ROOT=/path/to/ffmpeg pip install -e .
 ```
 
 ### Building Wheels Locally

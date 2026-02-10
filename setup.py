@@ -36,7 +36,7 @@ def get_ffmpeg_config():
     Get FFmpeg configuration for building.
 
     Priority:
-    1. TORCHFFMPEG_FFMPEG_ROOT environment variable (for wheel builds)
+    1. HUMECODEC_FFMPEG_ROOT environment variable (for wheel builds)
     2. PKG_CONFIG_PATH environment (for vendored FFmpeg)
     3. pkg-config system lookup
     4. Conda/pip environment
@@ -48,7 +48,7 @@ def get_ffmpeg_config():
     extra_link_args = []
 
     # Check for explicit FFmpeg root (used in wheel builds)
-    ffmpeg_root = os.environ.get("TORCHFFMPEG_FFMPEG_ROOT")
+    ffmpeg_root = os.environ.get("HUMECODEC_FFMPEG_ROOT")
     if ffmpeg_root:
         ffmpeg_root = Path(ffmpeg_root)
         if ffmpeg_root.exists():
@@ -59,8 +59,8 @@ def get_ffmpeg_config():
             if lib_dir.exists():
                 library_dirs.append(str(lib_dir))
                 # Add rpath for the bundled libraries
-                extra_link_args.append(f"-Wl,-rpath,$ORIGIN/../torchffmpeg.libs")
-            print(f"Using FFmpeg from TORCHFFMPEG_FFMPEG_ROOT: {ffmpeg_root}")
+                extra_link_args.append(f"-Wl,-rpath,$ORIGIN/../humecodec.libs")
+            print(f"Using FFmpeg from HUMECODEC_FFMPEG_ROOT: {ffmpeg_root}")
             return {
                 "include_dirs": include_dirs,
                 "extra_compile_args": extra_compile_args,
@@ -112,7 +112,7 @@ def get_ffmpeg_config():
         print(f"Using FFmpeg from Python environment: {env_prefix}")
     else:
         print("WARNING: FFmpeg not found. Build may fail.")
-        print("  Set TORCHFFMPEG_FFMPEG_ROOT or install FFmpeg via conda/pip.")
+        print("  Set HUMECODEC_FFMPEG_ROOT or install FFmpeg via conda/pip.")
 
     return {
         "include_dirs": include_dirs,
@@ -206,7 +206,7 @@ def get_pybind11_config():
         return {"include_dirs": [pybind11.get_include()]}
     except ImportError:
         raise RuntimeError(
-            "pybind11 is required to build torchffmpeg. "
+            "pybind11 is required to build humecodec. "
             "Please install pybind11 first: pip install pybind11"
         )
 
@@ -215,7 +215,7 @@ def get_pybind11_config():
 # Collect C++ sources
 # ---------------------------------------------------------------------------
 
-CSRC = Path(__file__).parent / "src" / "torchffmpeg" / "csrc"
+CSRC = Path(__file__).parent / "src" / "humecodec" / "csrc"
 
 
 def collect_sources():
@@ -234,7 +234,7 @@ pybind_cfg = get_pybind11_config()
 
 # Combine all include directories
 include_dirs = (
-    [str(Path(__file__).parent / "src")]  # so "torchffmpeg/csrc/..." includes work
+    [str(Path(__file__).parent / "src")]  # so "humecodec/csrc/..." includes work
     + ffmpeg_cfg["include_dirs"]
     + cuda_cfg["include_dirs"]
     + pybind_cfg["include_dirs"]
@@ -258,7 +258,7 @@ if cuda_cfg["cuda_available"]:
     define_macros.append(("USE_CUDA", None))
 
 ext = Extension(
-    name="torchffmpeg._torchffmpeg",
+    name="humecodec._humecodec",
     sources=collect_sources(),
     include_dirs=include_dirs,
     libraries=libraries,
