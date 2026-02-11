@@ -25,9 +25,6 @@ jobs:
           # macOS Apple Silicon
           - os: macos-14
             arch: arm64
-          # macOS Intel
-          - os: macos-13
-            arch: x86_64
           # Windows
           - os: windows-latest
             arch: AMD64
@@ -68,6 +65,7 @@ jobs:
             DYLD_LIBRARY_PATH=/tmp/ffmpeg/lib:$DYLD_LIBRARY_PATH
             HUMECODEC_FFMPEG_ROOT=/tmp/ffmpeg
             LDFLAGS=-headerpad_max_install_names
+            MACOSX_DEPLOYMENT_TARGET=14.0
           CIBW_ENVIRONMENT_WINDOWS: >
             INCLUDE=C:\\ffmpeg\\include
             LIB=C:\\ffmpeg\\lib

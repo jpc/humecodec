@@ -71,7 +71,7 @@ repair-wheel-command = "bash scripts/repair-wheel.sh {wheel} {dest_dir}"
 
 [tool.cibuildwheel.macos]
 before-build = "pip install pybind11 && python scripts/fetch-ffmpeg.py /tmp/ffmpeg"
-environment = { PKG_CONFIG_PATH = "/tmp/ffmpeg/lib/pkgconfig", DYLD_LIBRARY_PATH = "/tmp/ffmpeg/lib:$DYLD_LIBRARY_PATH", HUMECODEC_FFMPEG_ROOT = "/tmp/ffmpeg", LDFLAGS = "-headerpad_max_install_names" }
+environment = { PKG_CONFIG_PATH = "/tmp/ffmpeg/lib/pkgconfig", DYLD_LIBRARY_PATH = "/tmp/ffmpeg/lib:$DYLD_LIBRARY_PATH", HUMECODEC_FFMPEG_ROOT = "/tmp/ffmpeg", LDFLAGS = "-headerpad_max_install_names", MACOSX_DEPLOYMENT_TARGET = "14.0" }
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.windows]

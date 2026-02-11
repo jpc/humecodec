@@ -246,8 +246,11 @@ library_dirs = ffmpeg_cfg["library_dirs"] + cuda_cfg["library_dirs"]
 # Combine all libraries
 libraries = ffmpeg_cfg["libraries"] + cuda_cfg["libraries"]
 
-# Compile arguments
-extra_compile_args = ["-std=c++17", "-fPIC"] + ffmpeg_cfg["extra_compile_args"]
+# Compile arguments (MSVC uses different flags from GCC/Clang)
+if sys.platform == "win32":
+    extra_compile_args = ["/std:c++17"] + ffmpeg_cfg["extra_compile_args"]
+else:
+    extra_compile_args = ["-std=c++17", "-fPIC"] + ffmpeg_cfg["extra_compile_args"]
 
 # Link arguments
 extra_link_args = ffmpeg_cfg["extra_link_args"]
