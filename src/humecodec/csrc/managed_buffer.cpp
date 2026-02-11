@@ -1,8 +1,29 @@
 #include "humecodec/csrc/managed_buffer.h"
 
+#ifdef _WIN32
+#include <malloc.h>
+#endif
+
 #ifdef USE_CUDA
 #include <cuda_runtime.h>
 #endif
+
+namespace {
+inline void* aligned_alloc_portable(size_t alignment, size_t size) {
+#ifdef _WIN32
+  return _aligned_malloc(size, alignment);
+#else
+  return std::aligned_alloc(alignment, size);
+#endif
+}
+inline void aligned_free_portable(void* ptr) {
+#ifdef _WIN32
+  _aligned_free(ptr);
+#else
+  std::free(ptr);
+#endif
+}
+}  // namespace
 
 namespace humecodec {
 
@@ -26,7 +47,7 @@ ManagedBuffer::ManagedBuffer(
   // Allocate memory
   if (device_.device_type == kDLCPU) {
     // Use aligned allocation for better performance
-    data_ = std::aligned_alloc(64, nbytes_);
+    data_ = aligned_alloc_portable(64, nbytes_);
     HCODEC_CHECK(data_ != nullptr, "Failed to allocate ", nbytes_, " bytes on CPU");
   } else if (device_.device_type == kDLCUDA) {
 #ifdef USE_CUDA
@@ -97,7 +118,7 @@ void ManagedBuffer::free_data() {
   }
 
   if (device_.device_type == kDLCPU) {
-    std::free(data_);
+    aligned_free_portable(data_);
   } else if (device_.device_type == kDLCUDA) {
 #ifdef USE_CUDA
     cudaFree(data_);
@@ -170,7 +191,7 @@ struct ManagedTensorContext {
   ~ManagedTensorContext() {
     if (data) {
       if (device.device_type == kDLCPU) {
-        std::free(data);
+        aligned_free_portable(data);
       } else if (device.device_type == kDLCUDA) {
 #ifdef USE_CUDA
         cudaFree(data);
