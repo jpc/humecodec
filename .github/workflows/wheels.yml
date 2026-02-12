@@ -53,7 +53,7 @@ jobs:
             pip install pybind11 &&
             python scripts/fetch-ffmpeg.py /tmp/ffmpeg
           CIBW_BEFORE_BUILD_WINDOWS: >
-            pip install pybind11 &&
+            pip install pybind11 delvewheel &&
             python scripts\fetch-ffmpeg.py C:\ffmpeg
           # Set environment for finding FFmpeg
           CIBW_ENVIRONMENT_LINUX: >

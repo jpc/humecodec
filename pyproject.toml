@@ -75,6 +75,6 @@ environment = { PKG_CONFIG_PATH = "/tmp/ffmpeg/lib/pkgconfig", DYLD_LIBRARY_PATH
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}"
 
 [tool.cibuildwheel.windows]
-before-build = "pip install pybind11 && python scripts\\fetch-ffmpeg.py C:\\ffmpeg"
+before-build = "pip install pybind11 delvewheel && python scripts\\fetch-ffmpeg.py C:\\ffmpeg"
 environment = { INCLUDE = "C:\\ffmpeg\\include", LIB = "C:\\ffmpeg\\lib", HUMECODEC_FFMPEG_ROOT = "C:\\ffmpeg" }
 repair-wheel-command = "delvewheel repair --add-path C:\\ffmpeg\\bin -w {dest_dir} {wheel}"
