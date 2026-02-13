@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bump the minor version in pyproject.toml, commit, tag, and push.
+# Bump the version in pyproject.toml, commit, tag, and push.
+# Usage: bump-version.sh [--patch]
+#   Default: bump minor version (e.g. 0.2.0 -> 0.3.0)
+#   --patch: bump patch version (e.g. 0.2.0 -> 0.2.1)
+
+BUMP="minor"
+if [[ "${1:-}" == "--patch" ]]; then
+  BUMP="patch"
+fi
 
 PYPROJECT="$(git rev-parse --show-toplevel)/pyproject.toml"
 
@@ -13,8 +21,14 @@ if [[ -z "$current" ]]; then
 fi
 
 IFS='.' read -r major minor patch <<< "$current"
-new_minor=$((minor + 1))
-new_version="${major}.${new_minor}.0"
+
+if [[ "$BUMP" == "patch" ]]; then
+  new_patch=$((patch + 1))
+  new_version="${major}.${minor}.${new_patch}"
+else
+  new_minor=$((minor + 1))
+  new_version="${major}.${new_minor}.0"
+fi
 
 echo "Bumping version: ${current} -> ${new_version}"
 
