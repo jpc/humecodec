@@ -1,3 +1,4 @@
+#include "humecodec/csrc/avdevice_loader.h"
 #include "humecodec/csrc/hw_context.h"
 #include "humecodec/csrc/stream_reader/stream_reader.h"
 #include "humecodec/csrc/stream_writer/stream_writer.h"
@@ -72,10 +73,22 @@ std::map<std::string, std::tuple<int64_t, int64_t, int64_t>> get_versions() {
   add_version(avcodec);
   add_version(avformat);
   add_version(avfilter);
-  add_version(avdevice);
-  return ret;
 
 #undef add_version
+
+  // libavdevice is loaded at runtime via dlopen (to avoid macOS ObjC class
+  // conflicts when the user already has FFmpeg installed).  Report its
+  // version only when available.
+  int avdevice_ver = avdevice_loader::version();
+  if (avdevice_ver >= 0) {
+    ret.emplace(
+        "libavdevice",
+        std::make_tuple<>(
+            AV_VERSION_MAJOR(avdevice_ver),
+            AV_VERSION_MINOR(avdevice_ver),
+            AV_VERSION_MICRO(avdevice_ver)));
+  }
+  return ret;
 }
 
 std::map<std::string, std::string> get_demuxers(bool req_device) {
@@ -338,7 +351,7 @@ void write_video_chunk_dlpack_impl(
 }
 
 PYBIND11_MODULE(_humecodec, m) {
-  m.def("init", []() { avdevice_register_all(); });
+  m.def("init", []() { avdevice_loader::register_all(); });
   m.def("get_log_level", []() { return av_log_get_level(); });
   m.def("set_log_level", [](int level) { av_log_set_level(level); });
   m.def("get_versions", &get_versions);

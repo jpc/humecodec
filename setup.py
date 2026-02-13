@@ -14,10 +14,9 @@ FFMPEG_LIBS = [
     "libavformat",
     "libavfilter",
     "libavutil",
-    "libavdevice",
 ]
 
-FFMPEG_LIB_NAMES = ["avcodec", "avformat", "avfilter", "avutil", "avdevice", "swresample", "swscale"]
+FFMPEG_LIB_NAMES = ["avcodec", "avformat", "avfilter", "avutil", "swresample", "swscale"]
 
 
 def _pkg_config(flag: str, libs: list) -> list:

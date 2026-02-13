@@ -206,8 +206,9 @@ def test_seek_to_byte_offset_sample_accurate(tmp_path):
 
 def test_get_versions():
     versions = humecodec.get_versions()
+    # libavdevice is loaded at runtime via dlopen and may not be available
     expected_keys = {"libavutil", "libavcodec", "libavformat",
-                     "libavfilter", "libavdevice"}
+                     "libavfilter"}
     assert expected_keys.issubset(set(versions.keys()))
     for name, ver in versions.items():
         assert len(ver) == 3, f"{name} version should be a 3-tuple"

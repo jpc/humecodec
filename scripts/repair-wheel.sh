@@ -42,6 +42,18 @@ if [ -n "$LIBS_DIR" ]; then
             patchelf --set-rpath '$ORIGIN' "$lib" 2>/dev/null || true
         fi
     done
+
+    # Bundle libavdevice as a dlopen-only fallback (not linked at compile
+    # time, so auditwheel won't have picked it up automatically).
+    FFMPEG_ROOT="${HUMECODEC_FFMPEG_ROOT:-/tmp/ffmpeg}"
+    for avdev in "$FFMPEG_ROOT"/lib/libavdevice.so*; do
+        if [ -f "$avdev" ]; then
+            echo "Copying fallback: $(basename "$avdev")"
+            cp -a "$avdev" "$LIBS_DIR/"
+            # Patch its RPATH to find sibling bundled libs
+            patchelf --set-rpath '$ORIGIN' "$LIBS_DIR/$(basename "$avdev")" 2>/dev/null || true
+        fi
+    done
 fi
 
 # Repack the wheel using Python (zip may not be available in all containers)
