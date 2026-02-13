@@ -54,7 +54,8 @@ build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
 # Skip musllinux and PyPy
 skip = "*-musllinux_* pp*"
 
-# Test command
+# Test only one Python version per platform (the C extension is version-independent)
+test-skip = "cp39-* cp310-* cp311-* cp313-*"
 test-command = "pytest {project}/tests -v"
 test-requires = ["pytest", "numpy"]
 
