@@ -8,7 +8,7 @@ def _load_ext():
 
         _ext = _humecodec
         _ext.init()
-        _ext.set_log_level(24)  # AV_LOG_WARNING — suppress noisy info messages
+        _ext.set_log_level(16)  # AV_LOG_ERROR — suppress noisy warnings from decoders
     return _ext
 
 
