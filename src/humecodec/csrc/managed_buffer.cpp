@@ -10,6 +10,9 @@
 
 namespace {
 inline void* aligned_alloc_portable(size_t alignment, size_t size) {
+  // std::aligned_alloc requires size to be a multiple of alignment (strictly
+  // enforced on macOS). Round up to satisfy this constraint.
+  size = (size + alignment - 1) & ~(alignment - 1);
 #ifdef _WIN32
   return _aligned_malloc(size, alignment);
 #else
