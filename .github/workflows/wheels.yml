@@ -101,7 +101,7 @@ jobs:
           # Test the wheel
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: >
-            python -c "import humecodec; print(humecodec.get_versions())"
+            pytest {project}/tests -v
         run: cibuildwheel --output-dir wheelhouse
 
       - name: Upload wheels

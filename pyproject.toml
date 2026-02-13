@@ -55,7 +55,7 @@ build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
 skip = "*-musllinux_* pp*"
 
 # Test command
-test-command = "python -c \"import humecodec; print(humecodec.get_versions())\""
+test-command = "pytest {project}/tests -v"
 test-requires = ["pytest", "numpy"]
 
 [tool.cibuildwheel.linux]
