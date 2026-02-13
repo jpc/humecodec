@@ -98,6 +98,11 @@ jobs:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
           # Skip musllinux and PyPy
           CIBW_SKIP: "*-musllinux_* pp*"
+          # Pre-install CPU-only torch to avoid downloading the CUDA bundle
+          CIBW_BEFORE_TEST_LINUX: >
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+          CIBW_BEFORE_TEST_WINDOWS: >
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
           # Test the wheel
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: >

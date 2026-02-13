@@ -274,4 +274,5 @@ ext = Extension(
 
 setup(
     ext_modules=[ext],
+    options={"build_ext": {"parallel": True}},
 )
