@@ -578,7 +578,7 @@ std::vector<AVPacketPtr> StreamingMediaDecoder::pop_packets() {
 }
 
 std::vector<PacketIndexEntry> StreamingMediaDecoder::build_packet_index(
-    int stream_index) {
+    int stream_index, int64_t resolution_bytes) {
   validate_src_stream_index(format_ctx, stream_index);
 
   AVStream* stream = format_ctx->streams[stream_index];
@@ -594,17 +594,21 @@ std::vector<PacketIndexEntry> StreamingMediaDecoder::build_packet_index(
 
   AVPacketPtr pkt{alloc_avpacket()};
   std::vector<PacketIndexEntry> index;
+  int64_t last_emitted_pos = -resolution_bytes; // ensures first entry is always emitted
 
   while (av_read_frame(format_ctx, pkt) >= 0) {
     if (pkt->stream_index == stream_index) {
-      PacketIndexEntry entry;
-      entry.pts = pkt->pts;
-      entry.pts_seconds =
-          (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts * time_base : -1.0;
-      entry.pos = pkt->pos;
-      entry.size = pkt->size;
-      entry.is_key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
-      index.push_back(entry);
+      if (pkt->pos - last_emitted_pos >= resolution_bytes) {
+        PacketIndexEntry entry;
+        entry.pts = pkt->pts;
+        entry.pts_seconds =
+            (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts * time_base : -1.0;
+        entry.pos = pkt->pos;
+        entry.size = pkt->size;
+        entry.is_key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
+        index.push_back(entry);
+        last_emitted_pos = pkt->pos;
+      }
     }
     av_packet_unref(pkt);
   }

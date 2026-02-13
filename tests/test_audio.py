@@ -129,6 +129,81 @@ def test_encoder_decoder_streaming(tmp_path):
     assert result.shape[1] == num_channels
 
 
+def test_build_packet_index(tmp_path):
+    path = str(tmp_path / "index_test.wav")
+    sr = 44100
+    original = _make_sine(sample_rate=sr, duration=5.0)
+    humecodec.save_audio(path, original, sr)
+
+    # Build index with default resolution
+    decoder = humecodec.MediaDecoder(path)
+    decoder.add_audio_stream(frames_per_chunk=-1)
+    index_default = decoder.build_packet_index()
+
+    assert len(index_default) > 0
+    for entry in index_default:
+        assert entry.pos >= 0
+        assert entry.size > 0
+        assert entry.pts_seconds >= 0
+    # Entries should be sorted by pts_seconds
+    pts_list = [e.pts_seconds for e in index_default]
+    assert pts_list == sorted(pts_list)
+
+    # Build index with resolution=1 (every packet)
+    decoder2 = humecodec.MediaDecoder(path)
+    decoder2.add_audio_stream(frames_per_chunk=-1)
+    index_full = decoder2.build_packet_index(resolution=1)
+
+    assert len(index_full) >= len(index_default)
+
+
+def test_seek_to_byte_offset_sample_accurate(tmp_path):
+    path = str(tmp_path / "sweep.wav")
+    sr = 44100
+    duration = 5.0
+    n = int(sr * duration)
+    # Frequency sweep so each position is unique
+    t = torch.arange(n, dtype=torch.float32) / sr
+    freq = 200 + 2000 * t / duration  # 200 Hz -> 2200 Hz
+    phase = 2 * math.pi * torch.cumsum(freq / sr, dim=0)
+    waveform = (0.5 * torch.sin(phase)).unsqueeze(1)
+
+    humecodec.save_audio(path, waveform, sr)
+
+    # Load the full file as reference (WAV may pad slightly)
+    ref, ref_sr = humecodec.load_audio(path)
+    assert ref_sr == sr
+
+    # Build full packet index
+    decoder = humecodec.MediaDecoder(path)
+    decoder.add_audio_stream(frames_per_chunk=-1)
+    index = decoder.build_packet_index(resolution=1)
+    assert len(index) > 1
+
+    # Pick several entries spread across the file
+    step = max(1, len(index) // 5)
+    test_entries = index[::step]
+
+    for entry in test_entries:
+        dec = humecodec.MediaDecoder(path)
+        dec.add_audio_stream(frames_per_chunk=-1, filter_desc="aformat=sample_fmts=fltp")
+        dec.seek_to_byte_offset(entry.pos)
+        dec.process_all_packets()
+        (chunk,) = dec.pop_chunks()
+        assert chunk is not None
+        assert chunk.shape[0] > 0
+
+        # Determine the sample offset from pts_seconds
+        sample_offset = int(round(entry.pts_seconds * sr))
+        compare_len = min(chunk.shape[0], ref.shape[0] - sample_offset)
+        if compare_len <= 0:
+            continue
+        ref_region = ref[sample_offset : sample_offset + compare_len]
+        torch.testing.assert_close(
+            chunk[:compare_len], ref_region, atol=1e-4, rtol=1e-4
+        )
+
+
 def test_get_versions():
     versions = humecodec.get_versions()
     expected_keys = {"libavutil", "libavcodec", "libavformat",

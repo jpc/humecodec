@@ -137,7 +137,7 @@ class StreamingMediaDecoder {
   /// decoding.  The format context is rewound to the beginning before
   /// scanning, and the caller should seek() afterwards if they intend to
   /// continue decoding from a specific position.
-  std::vector<PacketIndexEntry> build_packet_index(int stream_index);
+  std::vector<PacketIndexEntry> build_packet_index(int stream_index, int64_t resolution_bytes = 524288);
 };
 
 //////////////////////////////////////////////////////////////////////////////

@@ -484,7 +484,8 @@ PYBIND11_MODULE(_humecodec, m) {
       .def("fill_buffer", &StreamingMediaDecoder::fill_buffer)
       .def("is_buffer_ready", &StreamingMediaDecoder::is_buffer_ready)
       .def("pop_chunks_dlpack", &pop_chunks_dlpack_impl<StreamingMediaDecoder>)
-      .def("build_packet_index", &StreamingMediaDecoder::build_packet_index);
+      .def("build_packet_index", &StreamingMediaDecoder::build_packet_index,
+           py::arg("stream_index"), py::arg("resolution_bytes") = 524288);
   py::class_<StreamingMediaDecoderFileObj>(
       m, "StreamingMediaDecoderFileObj", py::module_local())
       .def(py::init<
@@ -522,7 +523,8 @@ PYBIND11_MODULE(_humecodec, m) {
       .def("fill_buffer", &StreamingMediaDecoderFileObj::fill_buffer)
       .def("is_buffer_ready", &StreamingMediaDecoderFileObj::is_buffer_ready)
       .def("pop_chunks_dlpack", &pop_chunks_dlpack_impl<StreamingMediaDecoderFileObj>)
-      .def("build_packet_index", &StreamingMediaDecoderFileObj::build_packet_index);
+      .def("build_packet_index", &StreamingMediaDecoderFileObj::build_packet_index,
+           py::arg("stream_index"), py::arg("resolution_bytes") = 524288);
   py::class_<StreamingMediaDecoderBytes>(
       m, "StreamingMediaDecoderBytes", py::module_local())
       .def(py::init<
@@ -560,7 +562,8 @@ PYBIND11_MODULE(_humecodec, m) {
       .def("fill_buffer", &StreamingMediaDecoderBytes::fill_buffer)
       .def("is_buffer_ready", &StreamingMediaDecoderBytes::is_buffer_ready)
       .def("pop_chunks_dlpack", &pop_chunks_dlpack_impl<StreamingMediaDecoderBytes>)
-      .def("build_packet_index", &StreamingMediaDecoderBytes::build_packet_index);
+      .def("build_packet_index", &StreamingMediaDecoderBytes::build_packet_index,
+           py::arg("stream_index"), py::arg("resolution_bytes") = 524288);
 }
 
 } // namespace

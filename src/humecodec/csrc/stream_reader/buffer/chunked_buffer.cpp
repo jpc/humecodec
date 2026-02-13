@@ -1,6 +1,7 @@
 #include "humecodec/csrc/stream_reader/buffer/chunked_buffer.h"
 
 #ifdef USE_CUDA
+#include <cuda_runtime.h>
 #include "humecodec/csrc/cuda_utils.h"
 #endif
 

@@ -316,7 +316,7 @@ class MediaDecoder:
             raise ValueError(f"The value of mode must be one of {list(modes.keys())}. Found: {mode}")
         self._be.seek(timestamp, modes[mode])
 
-    def build_packet_index(self, stream_index: Optional[int] = None):
+    def build_packet_index(self, stream_index: Optional[int] = None, resolution: int = 524288):
         """Scan all packets for a stream and return a lightweight seek index.
 
         Each entry contains ``pts_seconds``, ``pos`` (byte offset), ``size``,
@@ -330,12 +330,15 @@ class MediaDecoder:
         Args:
             stream_index (int or None, optional): Source stream to index.
                 Defaults to the best audio stream.
+            resolution (int, optional): Minimum byte distance between
+                consecutive index entries.  Defaults to 524288 (512 KB).
+                Use ``resolution=1`` for a full per-packet index.
         """
         if stream_index is None:
             stream_index = self._default_audio_stream
         if stream_index is None:
             raise RuntimeError("No stream to index (no audio stream found and no stream_index given).")
-        return self._be.build_packet_index(stream_index)
+        return self._be.build_packet_index(stream_index, resolution)
 
     def seek_to_byte_offset(self, offset: int):
         """Seek directly to a byte position in the underlying file.

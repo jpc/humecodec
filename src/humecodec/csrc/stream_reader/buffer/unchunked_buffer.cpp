@@ -1,5 +1,9 @@
 #include "humecodec/csrc/stream_reader/buffer/unchunked_buffer.h"
 
+#ifdef USE_CUDA
+#include <cuda_runtime.h>
+#endif
+
 namespace humecodec::detail {
 
 UnchunkedBuffer::UnchunkedBuffer(AVRational time_base) : time_base(time_base){};
