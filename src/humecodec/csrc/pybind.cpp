@@ -379,6 +379,8 @@ PYBIND11_MODULE(_humecodec, m) {
   py::class_<PacketIndexEntry>(m, "PacketIndexEntry", py::module_local())
       .def_readonly("pts", &PacketIndexEntry::pts)
       .def_readonly("pts_seconds", &PacketIndexEntry::pts_seconds)
+      .def_readonly("duration", &PacketIndexEntry::duration)
+      .def_readonly("duration_seconds", &PacketIndexEntry::duration_seconds)
       .def_readonly("pos", &PacketIndexEntry::pos)
       .def_readonly("size", &PacketIndexEntry::size)
       .def_readonly("is_key", &PacketIndexEntry::is_key);

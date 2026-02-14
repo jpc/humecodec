@@ -58,6 +58,8 @@ struct Chunk {
 struct PacketIndexEntry {
   int64_t pts;          // Raw presentation timestamp in stream time_base units
   double pts_seconds;   // Presentation timestamp in seconds
+  int64_t duration;     // Duration in stream time_base units
+  double duration_seconds; // Duration in seconds
   int64_t pos;          // Byte offset of the packet in the file
   int size;             // Packet payload size in bytes
   bool is_key;          // Whether this is a keyframe

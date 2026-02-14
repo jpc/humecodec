@@ -603,6 +603,8 @@ std::vector<PacketIndexEntry> StreamingMediaDecoder::build_packet_index(
         entry.pts = pkt->pts;
         entry.pts_seconds =
             (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts * time_base : -1.0;
+        entry.duration = pkt->duration;
+        entry.duration_seconds = pkt->duration * time_base;
         entry.pos = pkt->pos;
         entry.size = pkt->size;
         entry.is_key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
