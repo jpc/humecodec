@@ -204,6 +204,127 @@ def test_seek_to_byte_offset_sample_accurate(tmp_path):
         )
 
 
+def test_load_torchaudio_compat(tmp_path):
+    """load() returns [channel, time] shape, correct sample rate, float32."""
+    path = str(tmp_path / "compat.wav")
+    sr = 44100
+    original = _make_sine(sample_rate=sr, duration=0.5)  # [time, channel]
+    humecodec.save_audio(path, original, sr)
+
+    waveform, loaded_sr = humecodec.load(path)
+    assert loaded_sr == sr
+    assert waveform.dtype == torch.float32
+    # load() default is channels_first=True -> [channel, time]
+    assert waveform.dim() == 2
+    assert waveform.shape[0] == original.shape[1]  # num_channels
+    min_frames = min(waveform.shape[1], original.shape[0])
+    assert min_frames > 0
+
+
+def test_load_channels_first_false(tmp_path):
+    """load() with channels_first=False returns [time, channel]."""
+    path = str(tmp_path / "compat_cf.wav")
+    sr = 44100
+    original = _make_sine(sample_rate=sr, duration=0.5)
+    humecodec.save_audio(path, original, sr)
+
+    waveform, loaded_sr = humecodec.load(path, channels_first=False)
+    assert loaded_sr == sr
+    # channels_first=False -> [time, channel]
+    assert waveform.shape[1] == original.shape[1]  # num_channels
+    min_frames = min(waveform.shape[0], original.shape[0])
+    torch.testing.assert_close(
+        waveform[:min_frames], original[:min_frames], atol=1e-4, rtol=1e-4
+    )
+
+
+def test_load_frame_offset_num_frames(tmp_path):
+    """load() with frame_offset and num_frames slices correctly."""
+    path = str(tmp_path / "slice.wav")
+    sr = 44100
+    duration = 1.0
+    original = _make_sine(sample_rate=sr, duration=duration)
+    humecodec.save_audio(path, original, sr)
+
+    frame_offset = 4410  # 0.1 seconds
+    num_frames = 22050   # 0.5 seconds
+
+    waveform, loaded_sr = humecodec.load(
+        path, frame_offset=frame_offset, num_frames=num_frames
+    )
+    assert loaded_sr == sr
+    # channels_first=True -> [channel, time]
+    assert waveform.shape[1] <= num_frames + 1  # allow 1 frame rounding
+
+
+def test_save_torchaudio_compat(tmp_path):
+    """save() accepts [channel, time] input and round-trips correctly."""
+    path = str(tmp_path / "save_compat.wav")
+    sr = 44100
+    # Create [channel, time] tensor (torchaudio convention)
+    original_tf = _make_sine(sample_rate=sr, duration=0.5)  # [time, channel]
+    original_cf = original_tf.t()  # [channel, time]
+
+    humecodec.save(path, original_cf, sr)
+    loaded, loaded_sr = humecodec.load(path)
+
+    assert loaded_sr == sr
+    assert loaded.shape[0] == original_cf.shape[0]  # same num_channels
+    min_frames = min(loaded.shape[1], original_cf.shape[1])
+    torch.testing.assert_close(
+        loaded[:, :min_frames], original_cf[:, :min_frames], atol=1e-4, rtol=1e-4
+    )
+
+
+def test_save_channels_first_false(tmp_path):
+    """save() with channels_first=False accepts [time, channel] input."""
+    path = str(tmp_path / "save_tf.wav")
+    sr = 44100
+    original = _make_sine(sample_rate=sr, duration=0.5)  # [time, channel]
+
+    humecodec.save(path, original, sr, channels_first=False)
+    loaded, loaded_sr = humecodec.load(path, channels_first=False)
+
+    assert loaded_sr == sr
+    min_frames = min(loaded.shape[0], original.shape[0])
+    torch.testing.assert_close(
+        loaded[:min_frames], original[:min_frames], atol=1e-4, rtol=1e-4
+    )
+
+
+def test_info_has_encoding(tmp_path):
+    """info() returns encoding and bits_per_sample fields."""
+    path = str(tmp_path / "enc_test.wav")
+    sr = 44100
+    original = _make_sine(sample_rate=sr, duration=0.5)
+    humecodec.save_audio(path, original, sr)
+
+    ai = humecodec.info(path)
+    assert hasattr(ai, "encoding")
+    assert hasattr(ai, "bits_per_sample")
+    # WAV default encoder is pcm_s16le or pcm_f32le
+    assert ai.encoding in ("PCM_S", "PCM_F")
+    assert ai.bits_per_sample > 0
+
+
+def test_list_audio_backends():
+    backends = humecodec.list_audio_backends()
+    assert isinstance(backends, list)
+    assert "ffmpeg" in backends
+
+
+def test_load_pathlike(tmp_path):
+    """load() accepts PathLike objects."""
+    path = tmp_path / "pathlike.wav"
+    sr = 44100
+    original = _make_sine(sample_rate=sr, duration=0.5)
+    humecodec.save_audio(str(path), original, sr)
+
+    waveform, loaded_sr = humecodec.load(path)  # Pass Path object directly
+    assert loaded_sr == sr
+    assert waveform.shape[0] == 1  # mono, channels_first
+
+
 def test_get_versions():
     versions = humecodec.get_versions()
     # libavdevice is loaded at runtime via dlopen and may not be available
