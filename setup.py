@@ -30,96 +30,108 @@ def _pkg_config(flag: str, libs: list) -> list:
         return []
 
 
+def _ffmpeg_root_config(ffmpeg_root, rpath):
+    """Build config from an FFmpeg root directory with include/ and lib/."""
+    include_dirs = []
+    library_dirs = []
+    extra_link_args = []
+
+    ffmpeg_root = Path(ffmpeg_root)
+    include_dir = ffmpeg_root / "include"
+    lib_dir = ffmpeg_root / "lib"
+    if include_dir.exists():
+        include_dirs.append(str(include_dir))
+    if lib_dir.exists():
+        library_dirs.append(str(lib_dir))
+        extra_link_args.append(f"-Wl,-rpath,{rpath}")
+
+    return {
+        "include_dirs": include_dirs,
+        "extra_compile_args": [],
+        "libraries": list(FFMPEG_LIB_NAMES),
+        "library_dirs": library_dirs,
+        "extra_link_args": extra_link_args,
+    }
+
+
+def _patch_ffmpeg_rpath(lib_dir):
+    """Set RPATH=$ORIGIN on all shared libraries so they find each other."""
+    try:
+        subprocess.check_output(["patchelf", "--version"], stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        print("WARNING: patchelf not found, skipping RPATH patching.")
+        print("  Install patchelf: pip install patchelf")
+        return
+
+    for so in Path(lib_dir).glob("*.so*"):
+        if so.is_symlink() or not so.is_file():
+            continue
+        try:
+            subprocess.check_call(
+                ["patchelf", "--set-rpath", "$ORIGIN", str(so)],
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            pass
+
+
+def _fetch_ffmpeg():
+    """Download pre-built FFmpeg to a local .ffmpeg directory, return its path."""
+    project_root = Path(__file__).parent
+    ffmpeg_dir = project_root / ".ffmpeg"
+    lib_dir = ffmpeg_dir / "lib"
+
+    # Already fetched?
+    if lib_dir.exists() and any(lib_dir.glob("libavcodec*")):
+        return ffmpeg_dir
+
+    fetch_script = project_root / "scripts" / "fetch-ffmpeg.py"
+    if not fetch_script.exists():
+        return None
+
+    print("Fetching pre-built FFmpeg libraries...")
+    try:
+        subprocess.check_call(
+            [sys.executable, str(fetch_script), str(ffmpeg_dir)],
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"WARNING: Failed to fetch FFmpeg: {e}")
+        return None
+
+    if lib_dir.exists() and any(lib_dir.glob("libavcodec*")):
+        _patch_ffmpeg_rpath(lib_dir)
+        return ffmpeg_dir
+
+    return None
+
+
 def get_ffmpeg_config():
     """
     Get FFmpeg configuration for building.
 
     Priority:
     1. HUMECODEC_FFMPEG_ROOT environment variable (for wheel builds)
-    2. PKG_CONFIG_PATH environment (for vendored FFmpeg)
-    3. pkg-config system lookup
-    4. Conda/pip environment
+    2. Auto-fetch pre-built FFmpeg (for editable/dev installs)
+    3. Fail with instructions
     """
-    include_dirs = []
-    library_dirs = []
-    libraries = list(FFMPEG_LIB_NAMES)
-    extra_compile_args = []
-    extra_link_args = []
-
     # Check for explicit FFmpeg root (used in wheel builds)
     ffmpeg_root = os.environ.get("HUMECODEC_FFMPEG_ROOT")
     if ffmpeg_root:
         ffmpeg_root = Path(ffmpeg_root)
         if ffmpeg_root.exists():
-            include_dir = ffmpeg_root / "include"
-            lib_dir = ffmpeg_root / "lib"
-            if include_dir.exists():
-                include_dirs.append(str(include_dir))
-            if lib_dir.exists():
-                library_dirs.append(str(lib_dir))
-                # Add rpath for the bundled libraries
-                extra_link_args.append(f"-Wl,-rpath,$ORIGIN/../humecodec.libs")
             print(f"Using FFmpeg from HUMECODEC_FFMPEG_ROOT: {ffmpeg_root}")
-            return {
-                "include_dirs": include_dirs,
-                "extra_compile_args": extra_compile_args,
-                "libraries": libraries,
-                "library_dirs": library_dirs,
-                "extra_link_args": extra_link_args,
-            }
+            return _ffmpeg_root_config(ffmpeg_root, "$ORIGIN/../humecodec.libs")
 
-    # Try pkg-config
-    cflags = _pkg_config("--cflags", FFMPEG_LIBS)
-    ldflags = _pkg_config("--libs", FFMPEG_LIBS)
+    # Auto-fetch pre-built FFmpeg
+    ffmpeg_dir = _fetch_ffmpeg()
+    if ffmpeg_dir:
+        lib_dir = ffmpeg_dir / "lib"
+        print(f"Using pre-built FFmpeg from: {ffmpeg_dir}")
+        return _ffmpeg_root_config(ffmpeg_dir, str(lib_dir))
 
-    if cflags or ldflags:
-        for f in cflags:
-            if f.startswith("-I"):
-                include_dirs.append(f[2:])
-            else:
-                extra_compile_args.append(f)
-
-        libraries = []  # Reset - we'll get them from pkg-config
-        for f in ldflags:
-            if f.startswith("-l"):
-                libraries.append(f[2:])
-            elif f.startswith("-L"):
-                library_dirs.append(f[2:])
-            else:
-                extra_link_args.append(f)
-
-        if libraries:
-            print(f"Using FFmpeg from pkg-config")
-            return {
-                "include_dirs": include_dirs,
-                "extra_compile_args": extra_compile_args,
-                "libraries": libraries,
-                "library_dirs": library_dirs,
-                "extra_link_args": extra_link_args,
-            }
-
-    # Fallback: try conda/pip environment
-    env_prefix = sys.prefix
-    env_lib = Path(env_prefix) / "lib"
-    env_include = Path(env_prefix) / "include"
-
-    # Check for FFmpeg in the environment
-    if (env_lib / "libavcodec.so").exists() or (env_lib / "libavcodec.dylib").exists():
-        library_dirs.append(str(env_lib))
-        if env_include.exists():
-            include_dirs.append(str(env_include))
-        print(f"Using FFmpeg from Python environment: {env_prefix}")
-    else:
-        print("WARNING: FFmpeg not found. Build may fail.")
-        print("  Set HUMECODEC_FFMPEG_ROOT or install FFmpeg via conda/pip.")
-
-    return {
-        "include_dirs": include_dirs,
-        "extra_compile_args": extra_compile_args,
-        "libraries": libraries,
-        "library_dirs": library_dirs,
-        "extra_link_args": extra_link_args,
-    }
+    print("ERROR: FFmpeg not found. Set HUMECODEC_FFMPEG_ROOT or ensure")
+    print("  scripts/fetch-ffmpeg.py is available to download it automatically.")
+    sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
