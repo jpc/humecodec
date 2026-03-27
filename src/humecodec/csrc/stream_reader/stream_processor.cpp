@@ -1,7 +1,12 @@
 #include "humecodec/csrc/hw_context.h"
 #include "humecodec/csrc/stream_reader/stream_processor.h"
 #include "humecodec/csrc/tensor_view.h"
+#include <cinttypes>
 #include <string_view>
+
+extern "C" {
+#include <libavcodec/internal.h>
+}
 
 namespace humecodec {
 
@@ -313,6 +318,18 @@ void StreamProcessor::flush() {
       is_decoder_set(),
       "Decoder must have been set prior to calling this function.");
   avcodec_flush_buffers(codec_ctx);
+  // After flush, codecs like vorbis, opus, and wmav2 re-set skip_samples
+  // as if starting a new stream (encoder delay). This duplicate skip
+  // silently eats samples and shifts PTS, breaking seek accuracy.
+  // Zero it here; our 250ms pre-roll + PTS trimming handles the rest.
+  if (codec_ctx->internal->skip_samples > 0) {
+    av_log(codec_ctx, AV_LOG_WARNING,
+           "[seek] zeroing skip_samples=%d (codec=%s sr=%d)\n",
+           codec_ctx->internal->skip_samples,
+           avcodec_get_name(codec_ctx->codec_id),
+           codec_ctx->sample_rate);
+    codec_ctx->internal->skip_samples = 0;
+  }
   for (auto& ite : post_processes) {
     ite.second->flush();
   }
