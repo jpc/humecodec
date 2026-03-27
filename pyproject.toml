@@ -47,6 +47,9 @@ include = ["humecodec", "humecodec.*"]
 # cibuildwheel configuration
 # ---------------------------------------------------------------------------
 
+[tool.pytest.ini_options]
+addopts = "--doctest-glob=*.md"
+
 [tool.cibuildwheel]
 # Build for Python 3.9+
 build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
