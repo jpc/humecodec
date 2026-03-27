@@ -20,8 +20,8 @@ def test_save_load_wav_roundtrip(tmp_path):
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=0.5)
 
-    humecodec.save_audio(path, original, sr)
-    loaded, loaded_sr = humecodec.load_audio(path)
+    humecodec.save(path, original, sr, channels_first=False)
+    loaded, loaded_sr = humecodec.load(path, channels_first=False)
 
     assert loaded_sr == sr
     # Codec may pad frames; compare the overlapping region
@@ -35,8 +35,8 @@ def test_save_load_flac_roundtrip(tmp_path):
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=0.5)
 
-    humecodec.save_audio(path, original, sr)
-    loaded, loaded_sr = humecodec.load_audio(path)
+    humecodec.save(path, original, sr, channels_first=False)
+    loaded, loaded_sr = humecodec.load(path, channels_first=False)
 
     assert loaded_sr == sr
     # FLAC may pad to block boundaries; compare the overlapping region
@@ -50,8 +50,8 @@ def test_save_load_mp3_roundtrip(tmp_path):
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=1.0)
 
-    humecodec.save_audio(path, original, sr)
-    loaded, loaded_sr = humecodec.load_audio(path)
+    humecodec.save(path, original, sr, channels_first=False)
+    loaded, loaded_sr = humecodec.load(path, channels_first=False)
 
     assert loaded_sr == sr
     # MP3 pads frames, so loaded may be slightly longer; just check it's close
@@ -68,8 +68,8 @@ def test_save_load_opus_roundtrip(tmp_path):
     sr = 48000  # Opus native rate
     original = _make_sine(sample_rate=sr, duration=1.0)
 
-    humecodec.save_audio(path, original, sr)
-    loaded, loaded_sr = humecodec.load_audio(path)
+    humecodec.save(path, original, sr, channels_first=False)
+    loaded, loaded_sr = humecodec.load(path, channels_first=False)
 
     assert loaded_sr == sr
     min_frames = min(original.shape[0], loaded.shape[0])
@@ -86,7 +86,7 @@ def test_audio_info(tmp_path):
     duration = 0.5
     original = _make_sine(sample_rate=sr, duration=duration, num_channels=num_channels)
 
-    humecodec.save_audio(path, original, sr)
+    humecodec.save(path, original, sr, channels_first=False)
     ai = humecodec.info(path)
 
     assert ai.sample_rate == sr
@@ -133,7 +133,7 @@ def test_build_packet_index(tmp_path):
     path = str(tmp_path / "index_test.wav")
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=5.0)
-    humecodec.save_audio(path, original, sr)
+    humecodec.save(path, original, sr, channels_first=False)
 
     # Build index with default resolution
     decoder = humecodec.MediaDecoder(path)
@@ -168,10 +168,10 @@ def test_seek_to_byte_offset_sample_accurate(tmp_path):
     phase = 2 * math.pi * torch.cumsum(freq / sr, dim=0)
     waveform = (0.5 * torch.sin(phase)).unsqueeze(1)
 
-    humecodec.save_audio(path, waveform, sr)
+    humecodec.save(path, waveform, sr, channels_first=False)
 
     # Load the full file as reference (WAV may pad slightly)
-    ref, ref_sr = humecodec.load_audio(path)
+    ref, ref_sr = humecodec.load(path, channels_first=False)
     assert ref_sr == sr
 
     # Build full packet index
@@ -209,7 +209,7 @@ def test_load_torchaudio_compat(tmp_path):
     path = str(tmp_path / "compat.wav")
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=0.5)  # [time, channel]
-    humecodec.save_audio(path, original, sr)
+    humecodec.save(path, original, sr, channels_first=False)
 
     waveform, loaded_sr = humecodec.load(path)
     assert loaded_sr == sr
@@ -226,7 +226,7 @@ def test_load_channels_first_false(tmp_path):
     path = str(tmp_path / "compat_cf.wav")
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=0.5)
-    humecodec.save_audio(path, original, sr)
+    humecodec.save(path, original, sr, channels_first=False)
 
     waveform, loaded_sr = humecodec.load(path, channels_first=False)
     assert loaded_sr == sr
@@ -244,7 +244,7 @@ def test_load_frame_offset_num_frames(tmp_path):
     sr = 44100
     duration = 1.0
     original = _make_sine(sample_rate=sr, duration=duration)
-    humecodec.save_audio(path, original, sr)
+    humecodec.save(path, original, sr, channels_first=False)
 
     frame_offset = 4410  # 0.1 seconds
     num_frames = 22050   # 0.5 seconds
@@ -297,7 +297,7 @@ def test_info_has_encoding(tmp_path):
     path = str(tmp_path / "enc_test.wav")
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=0.5)
-    humecodec.save_audio(path, original, sr)
+    humecodec.save(path, original, sr, channels_first=False)
 
     ai = humecodec.info(path)
     assert hasattr(ai, "encoding")
@@ -318,7 +318,7 @@ def test_load_pathlike(tmp_path):
     path = tmp_path / "pathlike.wav"
     sr = 44100
     original = _make_sine(sample_rate=sr, duration=0.5)
-    humecodec.save_audio(str(path), original, sr)
+    humecodec.save(str(path), original, sr, channels_first=False)
 
     waveform, loaded_sr = humecodec.load(path)  # Pass Path object directly
     assert loaded_sr == sr

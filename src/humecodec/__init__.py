@@ -2,6 +2,9 @@
 
 Provides MediaDecoder/MediaEncoder classes and convenience functions
 for loading/saving audio and video with PyTorch tensors.
+
+.. include:: ../../README.md
+
 """
 
 from __future__ import annotations
@@ -38,8 +41,6 @@ __all__ = [
     "AudioInfo",
     "load",
     "save",
-    "load_audio",
-    "save_audio",
     "info",
     "list_audio_backends",
     "get_audio_decoders",
@@ -146,6 +147,8 @@ def load(
     format: Optional[str] = None,
     buffer_size: int = 4096,
     backend: Optional[str] = None,
+    sample_rate: Optional[int] = None,
+    num_channels: Optional[int] = None,
 ) -> Tuple[torch.Tensor, int]:
     """Load audio from a file (torchaudio-compatible API).
 
@@ -160,6 +163,8 @@ def load(
         format: Override the input format.
         buffer_size: Buffer size for file-like objects.
         backend: Accepted but ignored (always uses ffmpeg).
+        sample_rate: If provided, resample to this rate.
+        num_channels: If provided, remix to this many channels.
 
     Returns:
         Tuple of ``(waveform, sample_rate)``.
@@ -184,8 +189,15 @@ def load(
 
     # Build filter
     filter_parts = []
+    if sample_rate is not None:
+        filter_parts.append(f"aresample={sample_rate}")
     if normalize:
-        filter_parts.append("aformat=sample_fmts=fltp")
+        fmt = "aformat=sample_fmts=fltp"
+        if num_channels is not None:
+            fmt += f":channel_layouts={num_channels}c"
+        filter_parts.append(fmt)
+    elif num_channels is not None:
+        filter_parts.append(f"aformat=channel_layouts={num_channels}c")
     filter_desc = ",".join(filter_parts) if filter_parts else None
 
     decoder = MediaDecoder(src, format=format, buffer_size=buffer_size)
@@ -299,110 +311,6 @@ def list_audio_backends() -> list:
         A list containing ``"ffmpeg"``.
     """
     return ["ffmpeg"]
-
-
-def load_audio(
-    path: str,
-    format: Optional[str] = None,
-    offset: float = 0.0,
-    duration: Optional[float] = None,
-    sample_rate: Optional[int] = None,
-    num_channels: Optional[int] = None,
-) -> Tuple[torch.Tensor, int]:
-    """Load an audio file.
-
-    Args:
-        path: Path to the audio file.
-        format: Override the input format. Default: ``None``.
-        offset: Start reading from this time (seconds). Default: ``0.0``.
-        duration: Maximum duration to read (seconds). Default: ``None`` (read all).
-        sample_rate: If provided, resample to this rate.
-        num_channels: If provided, remix to this many channels.
-
-    Returns:
-        Tuple of (waveform, sample_rate) where waveform has shape ``(num_frames, num_channels)``
-        and dtype ``torch.float32``.
-    """
-    decoder = MediaDecoder(path, format=format)
-
-    # Build filter description for resampling/remixing
-    filter_parts = []
-    if sample_rate is not None:
-        filter_parts.append(f"aresample={sample_rate}")
-    filter_parts.append("aformat=sample_fmts=fltp")
-    if num_channels is not None:
-        filter_parts[-1] += f":channel_layouts={num_channels}c"
-    filter_desc = ",".join(filter_parts) if filter_parts else None
-
-    decoder.add_audio_stream(
-        frames_per_chunk=-1,
-        buffer_chunk_size=-1,
-        filter_desc=filter_desc,
-    )
-
-    if offset > 0:
-        decoder.seek(offset)
-
-    decoder.process_all_packets()
-
-    chunks = decoder.pop_chunks()
-    if chunks[0] is None:
-        raise RuntimeError(f"Failed to decode audio from '{path}'")
-
-    waveform = chunks[0]._elem if hasattr(chunks[0], "_elem") else torch.Tensor(chunks[0])
-
-    if duration is not None:
-        # Determine effective sample rate
-        out_info = decoder.get_out_stream_info(0)
-        sr = int(out_info.sample_rate)
-        max_frames = int(duration * sr)
-        if waveform.size(0) > max_frames:
-            waveform = waveform[:max_frames]
-
-    # Get the actual output sample rate
-    out_info = decoder.get_out_stream_info(0)
-    sr = int(out_info.sample_rate)
-
-    return waveform, sr
-
-
-def save_audio(
-    path: str,
-    waveform: torch.Tensor,
-    sample_rate: int,
-    format: Optional[str] = None,
-    encoder: Optional[str] = None,
-    encoder_option: Optional[Dict[str, str]] = None,
-    codec_config: Optional[CodecConfig] = None,
-):
-    """Save a waveform tensor to an audio file.
-
-    Args:
-        path: Destination path.
-        waveform: Audio tensor. Shape: ``(num_frames, num_channels)``.
-        sample_rate: Sample rate of the waveform.
-        format: Override the output format. Default: ``None``.
-        encoder: The encoder name. Default: ``None``.
-        encoder_option: Options for encoder. Default: ``None``.
-        codec_config: Codec configuration. Default: ``None``.
-    """
-    if waveform.dim() != 2:
-        raise ValueError(f"Expected 2D tensor (frames, channels), got {waveform.dim()}D")
-
-    num_channels = waveform.size(1)
-
-    enc = MediaEncoder(path, format=format)
-    enc.add_audio_stream(
-        sample_rate=sample_rate,
-        num_channels=num_channels,
-        format="flt",
-        encoder=encoder,
-        encoder_option=encoder_option,
-        codec_config=codec_config,
-    )
-
-    with enc.open():
-        enc.write_audio_chunk(0, waveform.float().contiguous())
 
 
 def info(path: str, format: Optional[str] = None) -> AudioInfo:
