@@ -22,6 +22,8 @@ struct SrcStreamInfo {
   // Audio
   double sample_rate = 0;
   int num_channels = 0;
+  int initial_padding = 0;
+  int64_t start_skip_samples = 0;
 
   // Video
   int width = 0;
@@ -39,6 +41,7 @@ struct OutputStreamInfo {
   // Audio
   double sample_rate = -1;
   int num_channels = -1;
+  int codec_delay = 0;  // samples skipped at init (avctx->delay)
 
   // Video
   int width = -1;

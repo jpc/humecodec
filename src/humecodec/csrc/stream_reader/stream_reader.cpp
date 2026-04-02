@@ -164,6 +164,13 @@ SrcStreamInfo StreamingMediaDecoder::get_src_stream_info(int i) const {
         ret.fmt_name = av_get_sample_fmt_name(smp_fmt);
       }
       ret.sample_rate = static_cast<double>(codecpar->sample_rate);
+      ret.initial_padding = codecpar->initial_padding;
+      // start_skip_samples: recover from stream->start_time which the mp3
+      // demuxer sets as av_rescale_q(start_skip_samples, {1,sr}, time_base).
+      if (stream->start_time != AV_NOPTS_VALUE && stream->start_time > 0) {
+        AVRational sr_tb = {1, codecpar->sample_rate};
+        ret.start_skip_samples = av_rescale_q(stream->start_time, stream->time_base, sr_tb);
+      }
 #if LIBAVUTIL_VERSION_MAJOR >= 59
       ret.num_channels = codecpar->ch_layout.nb_channels;
 #else
@@ -229,6 +236,7 @@ OutputStreamInfo StreamingMediaDecoder::get_out_stream_info(int i) const {
     case AVMEDIA_TYPE_AUDIO:
       ret.sample_rate = info.sample_rate;
       ret.num_channels = info.num_channels;
+      ret.codec_delay = processors[i_src]->get_codec_delay();
       break;
     case AVMEDIA_TYPE_VIDEO:
       ret.width = info.width;
@@ -296,9 +304,10 @@ void StreamingMediaDecoder::seek(double timestamp_s, int64_t mode) {
     seek_timestamp = 0;
     HCODEC_CHECK(false, "Failed to seek. (" + av_err2string(ret) + ".)");
   }
+  bool to_start = (timestamp_av_tb == 0);
   for (const auto& it : processors) {
     if (it) {
-      it->flush();
+      it->flush(to_start);
       it->set_discard_timestamp(seek_timestamp);
     }
   }

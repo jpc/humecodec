@@ -102,10 +102,12 @@ AVBufferRef* get_hw_frames_ctx(AVCodecContext* codec_ctx) {
 void configure_codec_context(
     AVCodecContext* codec_ctx,
     const AVCodecParameters* params,
+    const AVRational& time_base,
     const DLDevice& dev) {
   int ret = avcodec_parameters_to_context(codec_ctx, params);
   HCODEC_CHECK(
       ret >= 0, "Failed to set CodecContext parameter: ", av_err2string(ret));
+  codec_ctx->pkt_timebase = time_base;
 
   if (dev.device_type == kDLCUDA) {
 #ifndef USE_CUDA
@@ -157,10 +159,11 @@ AVCodecContextPtr get_codec_ctx(
     const AVCodecParameters* params,
     const std::optional<std::string>& decoder_name,
     const std::optional<OptionDict>& decoder_option,
+    const AVRational& time_base,
     const DLDevice& dev) {
   AVCodecContextPtr codec_ctx =
       alloc_codec_context(params->codec_id, decoder_name);
-  configure_codec_context(codec_ctx, params, dev);
+  configure_codec_context(codec_ctx, params, time_base, dev);
   open_codec(codec_ctx, decoder_option);
   if (codec_ctx->hw_device_ctx) {
     codec_ctx->hw_frames_ctx = get_hw_frames_ctx(codec_ctx);
@@ -244,7 +247,8 @@ void StreamProcessor::set_decoder(
     const std::optional<OptionDict>& decoder_option,
     const DLDevice& dev) {
   HCODEC_INTERNAL_ASSERT_DEBUG_ONLY(!codec_ctx, "Decoder has already been set.");
-  codec_ctx = get_codec_ctx(codecpar, decoder_name, decoder_option, dev);
+  codec_ctx = get_codec_ctx(codecpar, decoder_name, decoder_option, stream_time_base, dev);
+  init_skip_samples_ = codec_ctx->internal->skip_samples;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -257,6 +261,10 @@ std::string StreamProcessor::get_filter_description(KeyType key) const {
 FilterGraphOutputInfo StreamProcessor::get_filter_output_info(
     KeyType key) const {
   return post_processes.at(key)->get_filter_output_info();
+}
+
+int StreamProcessor::get_codec_delay() const {
+  return init_skip_samples_;
 }
 
 bool StreamProcessor::is_buffer_ready() const {
@@ -313,23 +321,11 @@ int StreamProcessor::process_packet(AVPacket* packet) {
   return ret;
 }
 
-void StreamProcessor::flush() {
+void StreamProcessor::flush(bool seeking_to_start) {
   HCODEC_INTERNAL_ASSERT_DEBUG_ONLY(
       is_decoder_set(),
       "Decoder must have been set prior to calling this function.");
   avcodec_flush_buffers(codec_ctx);
-  // After flush, codecs like vorbis, opus, and wmav2 re-set skip_samples
-  // as if starting a new stream (encoder delay). This duplicate skip
-  // silently eats samples and shifts PTS, breaking seek accuracy.
-  // Zero it here; our 250ms pre-roll + PTS trimming handles the rest.
-  if (codec_ctx->internal->skip_samples > 0) {
-    av_log(codec_ctx, AV_LOG_WARNING,
-           "[seek] zeroing skip_samples=%d (codec=%s sr=%d)\n",
-           codec_ctx->internal->skip_samples,
-           avcodec_get_name(codec_ctx->codec_id),
-           codec_ctx->sample_rate);
-    codec_ctx->internal->skip_samples = 0;
-  }
   for (auto& ite : post_processes) {
     ite.second->flush();
   }

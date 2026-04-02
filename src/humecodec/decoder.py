@@ -43,6 +43,10 @@ class SourceAudioStream(SourceStream):
     """Sample rate of the audio."""
     num_channels: int
     """Number of channels."""
+    initial_padding: int
+    """Number of samples of encoder delay/padding at the start of the stream."""
+    start_skip_samples: int
+    """Number of samples the demuxer skips at the start (e.g. mp3 LAME encoder delay + 529)."""
 
 
 @dataclass
@@ -73,6 +77,8 @@ def _parse_si(i):
             time_base=tb,
             sample_rate=i.sample_rate,
             num_channels=i.num_channels,
+            initial_padding=i.initial_padding,
+            start_skip_samples=i.start_skip_samples,
         )
     if media_type == "video":
         return SourceVideoStream(
@@ -124,6 +130,8 @@ class OutputAudioStream(OutputStream):
     """Sample rate of the audio."""
     num_channels: int
     """Number of channels."""
+    codec_delay: int
+    """Number of samples the codec skips at init (encoder priming/delay)."""
 
 
 @dataclass
@@ -148,6 +156,7 @@ def _parse_oi(i):
             format=i.format,
             sample_rate=i.sample_rate,
             num_channels=i.num_channels,
+            codec_delay=i.codec_delay,
         )
     if media_type == "video":
         return OutputVideoStream(

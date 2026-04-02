@@ -435,6 +435,7 @@ PYBIND11_MODULE(_humecodec, m) {
           })
       .def_readonly("sample_rate", &OutputStreamInfo::sample_rate)
       .def_readonly("num_channels", &OutputStreamInfo::num_channels)
+      .def_readonly("codec_delay", &OutputStreamInfo::codec_delay)
       .def_readonly("width", &OutputStreamInfo::width)
       .def_readonly("height", &OutputStreamInfo::height)
       .def_property_readonly(
@@ -466,6 +467,8 @@ PYBIND11_MODULE(_humecodec, m) {
       .def_readonly("time_base_den", &SrcStreamInfo::time_base_den)
       .def_readonly("sample_rate", &SrcStreamInfo::sample_rate)
       .def_readonly("num_channels", &SrcStreamInfo::num_channels)
+      .def_readonly("initial_padding", &SrcStreamInfo::initial_padding)
+      .def_readonly("start_skip_samples", &SrcStreamInfo::start_skip_samples)
       .def_readonly("width", &SrcStreamInfo::width)
       .def_readonly("height", &SrcStreamInfo::height)
       .def_readonly("frame_rate", &SrcStreamInfo::frame_rate);
