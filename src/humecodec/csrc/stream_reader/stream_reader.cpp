@@ -617,7 +617,9 @@ std::vector<PacketIndexEntry> StreamingMediaDecoder::build_packet_index(
         entry.size = pkt->size;
         entry.is_key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
         index.push_back(entry);
-        last_emitted_pos = pkt->pos;
+        // Snap to grid to prevent cumulative drift: the next entry
+        // triggers at the grid point after this packet's position.
+        last_emitted_pos = (pkt->pos / resolution_bytes) * resolution_bytes;
       }
     }
     av_packet_unref(pkt);
