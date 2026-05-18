@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "humecodec"
-version = "0.6.1"
+version = "0.6.2"
 description = "FFmpeg integration for PyTorch with bundled libraries"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -35,10 +35,10 @@ keywords = ["audio", "video", "ffmpeg", "pytorch", "machine learning"]
 dependencies = ["torch>=2.0"]
 
 [project.urls]
-Homepage = "https://github.com/your-org/humecodec"
-Documentation = "https://github.com/your-org/humecodec#readme"
-Repository = "https://github.com/your-org/humecodec"
-Issues = "https://github.com/your-org/humecodec/issues"
+Homepage = "https://github.com/jpc/humecodec"
+Documentation = "https://github.com/jpc/humecodec#readme"
+Repository = "https://github.com/jpc/humecodec"
+Issues = "https://github.com/jpc/humecodec/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
