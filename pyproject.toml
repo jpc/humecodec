@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Sound/Audio",
     "Topic :: Multimedia :: Video",
     "Topic :: Scientific/Engineering",
@@ -52,13 +53,13 @@ addopts = "--doctest-glob=*.md"
 
 [tool.cibuildwheel]
 # Build for Python 3.9+
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 
 # Skip musllinux and PyPy
 skip = "*-musllinux_* pp*"
 
 # Test only one Python version per platform (the C extension is version-independent)
-test-skip = "cp39-* cp310-* cp311-* cp313-*"
+test-skip = "cp39-* cp310-* cp311-* cp313-* cp314-*"
 test-command = "pytest {project}/tests -v"
 test-requires = ["pytest", "numpy"]
 
