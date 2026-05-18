@@ -21,7 +21,6 @@ class StreamProcessor {
   std::map<KeyType, std::unique_ptr<IPostDecodeProcess>> post_processes;
 
   int64_t discard_before_pts = 0;
-  int init_skip_samples_ = 0;
 
  public:
   explicit StreamProcessor(const AVRational& time_base);
@@ -61,7 +60,6 @@ class StreamProcessor {
 
   bool is_buffer_ready() const;
   [[nodiscard]] bool is_decoder_set() const;
-  [[nodiscard]] int get_codec_delay() const;
 
   //////////////////////////////////////////////////////////////////////////////
   // The streaming process

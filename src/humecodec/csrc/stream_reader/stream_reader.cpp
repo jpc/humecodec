@@ -236,7 +236,6 @@ OutputStreamInfo StreamingMediaDecoder::get_out_stream_info(int i) const {
     case AVMEDIA_TYPE_AUDIO:
       ret.sample_rate = info.sample_rate;
       ret.num_channels = info.num_channels;
-      ret.codec_delay = processors[i_src]->get_codec_delay();
       break;
     case AVMEDIA_TYPE_VIDEO:
       ret.width = info.width;

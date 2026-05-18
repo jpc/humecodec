@@ -4,10 +4,6 @@
 #include <cinttypes>
 #include <string_view>
 
-extern "C" {
-#include <libavcodec/internal.h>
-}
-
 namespace humecodec {
 
 namespace {
@@ -248,7 +244,6 @@ void StreamProcessor::set_decoder(
     const DLDevice& dev) {
   HCODEC_INTERNAL_ASSERT_DEBUG_ONLY(!codec_ctx, "Decoder has already been set.");
   codec_ctx = get_codec_ctx(codecpar, decoder_name, decoder_option, stream_time_base, dev);
-  init_skip_samples_ = codec_ctx->internal->skip_samples;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -261,10 +256,6 @@ std::string StreamProcessor::get_filter_description(KeyType key) const {
 FilterGraphOutputInfo StreamProcessor::get_filter_output_info(
     KeyType key) const {
   return post_processes.at(key)->get_filter_output_info();
-}
-
-int StreamProcessor::get_codec_delay() const {
-  return init_skip_samples_;
 }
 
 bool StreamProcessor::is_buffer_ready() const {

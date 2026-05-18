@@ -435,7 +435,6 @@ PYBIND11_MODULE(_humecodec, m) {
           })
       .def_readonly("sample_rate", &OutputStreamInfo::sample_rate)
       .def_readonly("num_channels", &OutputStreamInfo::num_channels)
-      .def_readonly("codec_delay", &OutputStreamInfo::codec_delay)
       .def_readonly("width", &OutputStreamInfo::width)
       .def_readonly("height", &OutputStreamInfo::height)
       .def_property_readonly(

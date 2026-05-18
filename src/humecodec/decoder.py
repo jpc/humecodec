@@ -130,8 +130,6 @@ class OutputAudioStream(OutputStream):
     """Sample rate of the audio."""
     num_channels: int
     """Number of channels."""
-    codec_delay: int
-    """Number of samples the codec skips at init (encoder priming/delay)."""
 
 
 @dataclass
@@ -156,7 +154,6 @@ def _parse_oi(i):
             format=i.format,
             sample_rate=i.sample_rate,
             num_channels=i.num_channels,
-            codec_delay=i.codec_delay,
         )
     if media_type == "video":
         return OutputVideoStream(

@@ -57,7 +57,6 @@ class StreamingMediaDecoder {
   SrcStreamInfo get_src_stream_info(int i) const;
   int64_t num_out_streams() const;
   OutputStreamInfo get_out_stream_info(int i) const;
-  int get_codec_delay(int i) const;
   bool is_buffer_ready() const;
 
   StreamParams get_src_stream_params(int i);
