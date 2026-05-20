@@ -47,7 +47,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install cibuildwheel
-        run: pip install cibuildwheel==2.23.3
+        run: pip install cibuildwheel==3.4.1
 
       - name: Build wheels
         env:
