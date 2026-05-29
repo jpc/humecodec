@@ -42,6 +42,24 @@ torch.Size([2, 44100])
 
 ```
 
+### Save Compressed Audio (Opus / bitrate)
+
+The output codec is chosen from the file extension. Pass `compression=CodecConfig(bit_rate=...)`
+to control the target bitrate for lossy codecs like Opus, MP3, or AAC. Opus always encodes at
+48 kHz internally, so the input is resampled automatically.
+
+```pycon
+>>> from humecodec import CodecConfig
+>>> opus_path = os.path.join(tmpdir, "test.opus")
+>>> humecodec.save(opus_path, stereo, sr, compression=CodecConfig(bit_rate=192000))
+>>> humecodec.info(opus_path).codec
+'opus'
+
+```
+
+`compression` also accepts a bare int/float as shorthand for the bitrate
+(`compression=192000` is equivalent to `CodecConfig(bit_rate=192000)`).
+
 ### Load Audio
 
 ```pycon
