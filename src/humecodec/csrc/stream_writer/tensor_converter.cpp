@@ -1,6 +1,8 @@
 #include "humecodec/csrc/stream_writer/tensor_converter.h"
 #include "humecodec/csrc/tensor_view.h"
 
+#include <algorithm>
+
 #ifdef USE_CUDA
 #include <cuda_runtime.h>
 #endif
@@ -382,7 +384,11 @@ Iterator& Iterator::operator++() {
 }
 
 AVFrame* Iterator::operator*() const {
-  auto chunk = slice_dim0(frames, i, i + step);
+  // Clamp the final chunk to the buffer end. Without this, a length that isn't a
+  // multiple of `step` slices past the tensor and encodes out-of-bounds heap memory
+  // as the last frame's samples. convert_func sets nb_samples from the chunk size,
+  // so a short final frame is handled correctly by the encoder.
+  auto chunk = slice_dim0(frames, i, std::min(i + step, frames.size(0)));
   convert_func(chunk, buffer);
   return buffer;
 }
