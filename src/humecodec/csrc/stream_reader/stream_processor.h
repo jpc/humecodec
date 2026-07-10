@@ -21,6 +21,11 @@ class StreamProcessor {
   std::map<KeyType, std::unique_ptr<IPostDecodeProcess>> post_processes;
 
   int64_t discard_before_pts = 0;
+  // Set on a seek-flush (not seek-to-start). Used to correct the pts of the
+  // first emitted Vorbis frame after a seek: a block-size transition frame
+  // emits (bs_prev+bs_cur)/4 samples but its granule only advances bs_cur/2,
+  // so its leading (nb_samples - duration) samples belong *before* its pts.
+  bool warmup_pending_ = false;
 
  public:
   explicit StreamProcessor(const AVRational& time_base);

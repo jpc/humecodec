@@ -303,6 +303,22 @@ int StreamProcessor::process_packet(AVPacket* packet) {
       }
     }
 
+    // Correct the first Vorbis frame after a seek: its leading
+    // (nb_samples - granule_advance) samples are overlap that belongs before
+    // its pts, so shift the pts earlier to keep content and timestamps aligned.
+    if (warmup_pending_) {
+      warmup_pending_ = false;
+      if (codec_ctx->codec_id == AV_CODEC_ID_VORBIS &&
+          frame->pts != AV_NOPTS_VALUE) {
+        int64_t advance = frame->duration > 0 ? frame->duration : packet->duration;
+        int64_t warmup = (int64_t)frame->nb_samples - advance;
+        if (warmup > 0) {
+          frame->pts -= av_rescale_q(
+              warmup, av_make_q(1, codec_ctx->sample_rate), codec_ctx->pkt_timebase);
+        }
+      }
+    }
+
     if (discard_before_pts <= 0 || frame->pts >= discard_before_pts) {
       send_frame(frame);
     }
@@ -317,6 +333,9 @@ void StreamProcessor::flush(bool seeking_to_start) {
       is_decoder_set(),
       "Decoder must have been set prior to calling this function.");
   avcodec_flush_buffers(codec_ctx);
+  // Arm the Vorbis first-frame warmup pts correction (only for real seeks, not
+  // seeks back to the stream start where the first frame is genuinely at t=0).
+  warmup_pending_ = !seeking_to_start;
   for (auto& ite : post_processes) {
     ite.second->flush();
   }
