@@ -2,6 +2,7 @@
 #include "humecodec/csrc/stream_reader/stream_reader.h"
 #include "humecodec/csrc/tensor_view.h"
 #include <chrono>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -330,6 +331,24 @@ void StreamingMediaDecoder::seek_to_byte_offset(int64_t offset) {
       it->flush();
       it->set_discard_timestamp(0);
     }
+  }
+}
+
+void StreamingMediaDecoder::add_seek_points(
+    int stream_index,
+    const std::vector<int64_t>& positions,
+    const std::vector<double>& pts_seconds) {
+  HCODEC_CHECK(
+      positions.size() == pts_seconds.size(),
+      "positions and pts_seconds must have equal length.");
+  validate_src_stream_index(format_ctx, stream_index);
+  AVStream* stream = format_ctx->streams[stream_index];
+  double time_base = av_q2d(stream->time_base);
+  HCODEC_CHECK(time_base > 0, "stream has invalid time_base.");
+  for (size_t i = 0; i < positions.size(); ++i) {
+    int64_t ts = (int64_t)std::llround(pts_seconds[i] / time_base);
+    // AVINDEX_KEYFRAME: every entry is a valid seek point (Ogg page boundary).
+    av_add_index_entry(stream, positions[i], ts, 0, 0, AVINDEX_KEYFRAME);
   }
 }
 

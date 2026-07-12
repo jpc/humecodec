@@ -357,6 +357,28 @@ class MediaDecoder:
         """
         self._be.seek_to_byte_offset(offset)
 
+    def add_seek_points(self, positions, pts_seconds, stream_index: Optional[int] = None):
+        """Seed the demuxer's seek index with precomputed (byte pos, pts) pairs.
+
+        A subsequent :meth:`seek` then brackets the target between two of these
+        entries, skipping the header/footer probes and confining the container's
+        interpolation search to a single inter-entry gap (typically ~1 read
+        instead of the full binary/secant search). Accuracy is unchanged -- the
+        seek still reads the landing page to position exactly. Use with the same
+        ``(pos, pts_seconds)`` pairs from :meth:`build_packet_index` or an
+        external index; a coarse index is sufficient (it only needs to bracket).
+
+        Args:
+            positions (list[int]): Byte offsets in the input stream.
+            pts_seconds (list[float]): Timestamps in seconds for each position.
+            stream_index (int or None): Source stream. Defaults to best audio.
+        """
+        if stream_index is None:
+            stream_index = self._default_audio_stream
+        if stream_index is None:
+            raise RuntimeError("No stream to index (no audio stream found and no stream_index given).")
+        self._be.add_seek_points(stream_index, list(positions), [float(t) for t in pts_seconds])
+
     def add_basic_audio_stream(
         self,
         frames_per_chunk: int,

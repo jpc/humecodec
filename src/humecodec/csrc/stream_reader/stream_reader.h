@@ -107,6 +107,19 @@ class StreamingMediaDecoder {
   /// container-level scanning.
   void seek_to_byte_offset(int64_t offset);
 
+  /// Seed the demuxer's per-stream index (AVIndexEntry) with precomputed
+  /// (byte position, pts) pairs. A subsequent timestamp seek() then brackets
+  /// the target between two entries (av_index_search_timestamp), skipping the
+  /// header/footer timestamp probes and confining the interpolation search to
+  /// one inter-entry gap -> ~1 read instead of the full secant ladder. Accuracy
+  /// is unchanged: the seek still reads the landing page to position exactly.
+  /// `positions` are byte offsets in the input; `pts_seconds` are converted to
+  /// the stream time_base. Both vectors must have equal length.
+  void add_seek_points(
+      int stream_index,
+      const std::vector<int64_t>& positions,
+      const std::vector<double>& pts_seconds);
+
   int process_packet();
 
   int process_packet_block(const double timeout, const double backoff);
